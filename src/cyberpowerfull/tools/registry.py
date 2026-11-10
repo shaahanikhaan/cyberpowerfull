@@ -8,11 +8,13 @@ from cyberpowerfull.errors import ToolNotFound
 from cyberpowerfull.tools.amass import AmassTool
 from cyberpowerfull.tools.arjun import ArjunTool
 from cyberpowerfull.tools.base import BaseTool
+from cyberpowerfull.tools.cve_correlate import CveCorrelateTool
 from cyberpowerfull.tools.dalfox import DalfoxTool
 from cyberpowerfull.tools.dnsrecon import DnsreconTool
 from cyberpowerfull.tools.feroxbuster import FeroxbusterTool
 from cyberpowerfull.tools.ffuf import FfufTool
 from cyberpowerfull.tools.gobuster import GobusterTool
+from cyberpowerfull.tools.http_probe import HttpProbeTool
 from cyberpowerfull.tools.httpx_probe import HttpxTool
 from cyberpowerfull.tools.hydra import HydraTool
 from cyberpowerfull.tools.katana import KatanaTool
@@ -21,6 +23,7 @@ from cyberpowerfull.tools.naabu import NaabuTool
 from cyberpowerfull.tools.nikto import NiktoTool
 from cyberpowerfull.tools.nmap import NmapTool
 from cyberpowerfull.tools.nuclei import NucleiTool
+from cyberpowerfull.tools.payload import PayloadTool
 from cyberpowerfull.tools.pentagi import PentagiTool
 from cyberpowerfull.tools.searchsploit import SearchsploitTool
 from cyberpowerfull.tools.sn1per import Sn1perTool
@@ -36,6 +39,9 @@ from cyberpowerfull.tools.wpscan import WpscanTool
 _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     # native
     TcpProbeTool,
+    HttpProbeTool,
+    PayloadTool,
+    CveCorrelateTool,
     # recon / discovery
     SubfinderTool,
     AmassTool,

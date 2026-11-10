@@ -16,7 +16,7 @@ want reproducible automation with no model at all. Plus a live inventory of the 
 capability-gated aggression, append-only memory, an offline knowledge base (Exploit-DB, nuclei
 templates, NSE scripts), and no cloud API key, no Docker for the core loop, and no chat surface.
 
-[![version](https://img.shields.io/badge/version-3.1.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-3.2.0-blue.svg)](CHANGELOG.md)
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
@@ -25,11 +25,11 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 |---|---|
 | Reasoning | local open-weight model (Qwen3-4B / equivalent) via Ollama or llama.cpp — optional |
 | Automation | 6 deterministic playbooks, 34 ordered steps, parallel groups, fact-driven adaptivity |
-| Typed tools | 26 (22 CLI wrappers, 1 native connector, 3 external-agent adapters) |
+| Typed tools | 29 (22 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
-| Tests | 606 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Tests | 686 tests, 87% line coverage, `pytest --cov-fail-under=70` enforced in CI |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
 
 > **This repository is pentest-only.** The previous general-purpose "assistant" surface, the
@@ -119,7 +119,7 @@ Four components, strict separation, a deterministic control plane around an opti
 │   workers: recon | scan | validate | external                                │
 │   allowlists derived from the registry · phase check · capability gate       │
 │   scope re-check · negative cache · argv list (shell=False) · parser         │
-│   26 typed tools · 29 skill packs · 6 playbooks                              │
+│   29 typed tools · 29 skill packs · 6 playbooks                              │
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 │  ToolResult(status, findings, observations)
 ┌───────────────────────────────▼──────────────────────────────────────────────┐
@@ -180,7 +180,10 @@ src/cyberpowerfull/
 │   ├── tda.py              # Task Difficulty Assessment
 │   ├── attack_tree.py      # EGATS state machine
 │   └── orchestrator.py     # RootAgent, WorkerAgent, Orchestrator
-├── tools/                  # 26 typed wrappers + registry + report extractors
+├── tools/                  # 29 typed wrappers + registry + report extractors
+├── intel/                  # offline advisory corpus, NVD/KEV importers, correlation
+├── payloads/               # proof-only payload catalogue + request builder
+├── native_scan.py          # stdlib port scan, HTTP facts, nmap XML inventory
 ├── skills/packs/           # 29 Markdown/Jinja skill packages
 └── memory/store.py         # append-only SQLite memory
 ```
@@ -437,6 +440,9 @@ names are resolved automatically (`httpx` → `httpx-toolkit`, `testssl.sh` → 
 | Tool | Phase | Input schema (key fields) | Output format | Status |
 |---|---|---|---|---|
 | `tcp_probe` | recon | `target`, `ports` (≤64), `timeout_s` | native JSON | tested (unit + live loopback) |
+| `http_probe` | validation | `target` (URL), `method`, `headers` (≤10), `body`, `marker` | JSON | tested (unit + live loopback) |
+| `payload` | validation | `target` (URL), `skill`, `param`, `marker`, `ids`, `max_payloads` | JSON plan | tested (unit) |
+| `cve_correlate` | validation | `target`, `components` (≤50 product/version), `min_cvss`, `min_severity`, `intel_store` | JSON + typed findings | tested (unit) |
 | `subfinder` | recon | `target` (domain), `all_sources`, `recursive` | hostnames per line | tested (unit) |
 | `amass` | recon | `target` (domain), `timeout_minutes` | hostnames per line | tested (unit) |
 | `dnsrecon` | recon | `target` (domain), `scan_type`, `lifetime_s` | JSON file (`-j`) | tested (unit) |
@@ -472,6 +478,46 @@ Capability-gated tools (`masscan`, `naabu`, `hydra`, `strix`, `pentagi`, `sn1per
 the worker layer before execution unless `scope.json` grants the capability.
 
 ---
+
+## Offline CVE intelligence and proof payloads
+
+Version 3.2.0 adds a local vulnerability-intelligence layer and a proof-only payload engine.
+Neither needs an API key, a cloud service, or an internet connection at run time.
+
+```bash
+# 1. import advisories you fetched yourself (NVD 2.0/1.1 JSON, CISA KEV JSON)
+cyberpowerfull --import-feed nvd-2026.json --import-feed kev.json
+cyberpowerfull --intel-status                  # counts, years, KEV entries, severities
+
+# 2. correlate observed products/versions (unverified candidates, never claims)
+cyberpowerfull --correlate 'log4j=2.14.1;openssh=9.6p1' --target 127.0.0.1
+
+# 3. generate proof vectors, then deliver exactly one
+cyberpowerfull --payload xss --target 'http://127.0.0.1:8080/search'
+cyberpowerfull --http-probe 'http://127.0.0.1:8080/search?q=cpf7391' --probe-marker cpf7391
+
+# the same cycle as one bash command
+tools/bash/scan_cycle.sh --scope scope.json --target 127.0.0.1
+```
+
+- **Corpus** (`intel/`): SQLite store, merge-on-import (CVSS maximum, KEV flag OR, references
+  unioned), version ranges (`introduced`/`fixed`/`last_affected`/`exact`) compared by a
+  dependency-free tokeniser that understands `2.4.49`, `9.6p1`, and `2.0-beta9`. A curated
+  snapshot ships with the tool; importing current NVD/KEV feeds extends coverage to any year,
+  including newly published CVEs. Nothing is fabricated: absent data yields no candidate.
+- **Correlation**: component `product`/`version` pairs come from real tool output. Each match
+  carries a confidence score and a rationale; severity is capped for unversioned components.
+  Results are `verified=False` candidate findings until a template check, an authenticated
+  version comparison, or a payload proof confirms them.
+- **Payloads** (`payloads/`): 55 catalogue entries across 14 skills (SQL injection, XSS, SSTI,
+  SSRF, path traversal, open redirect, command injection, XXE, JWT, IDOR, mass assignment,
+  cache poisoning, CRLF, API discovery). Every entry proves a signal — arithmetic, timing,
+  reflection, entity expansion, trust-flag change — and the catalogue is audited on every
+  generation; destructive templates are refused before a request is built.
+- **Bash toolkit** (`tools/bash/`): `cve_hunt.sh` (scan → inventory → correlate),
+  `payload_run.sh` (generate, then deliver one), `scan_cycle.sh` (the whole first pass plus a
+  Markdown summary). All three require `--scope scope.json` and re-check every target through
+  the Python scope engine.
 
 ## Skills
 
