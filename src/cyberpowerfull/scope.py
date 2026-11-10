@@ -12,6 +12,7 @@ import hashlib
 import ipaddress
 import json
 import re
+from collections.abc import Sequence
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -333,4 +334,78 @@ def load_scope(path: str | Path) -> Scope:
     return scope
 
 
-__all__ = ["Scope", "load_scope", "network_contains", "normalize_host"]
+def write_scope(path: str | Path, scope: Scope, *, force: bool = False) -> Path:
+    """Write a validated scope to disk without ever overwriting silently."""
+    target = Path(path)
+    if target.exists() and not force:
+        raise ScopeError(f"{target} already exists; edit that file or pass --force to replace it")
+    payload = scope.model_dump(mode="json", exclude_none=False)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return target
+
+
+def bootstrap_scope(
+    *,
+    engagement: str,
+    targets: Sequence[str],
+    domains: Sequence[str] = (),
+    exclude: Sequence[str] = (),
+    capabilities: Sequence[str | Capability] = (),
+    authorization_ref: str | None = None,
+    authorized: bool = False,
+    expires: date | None = None,
+    contact: str | None = None,
+    max_rps: float = 5.0,
+    allow_passive_sources: bool = False,
+    allowed_wordlists: Sequence[str] = (),
+    allowed_nuclei_templates: Sequence[str] = (),
+    notes: str | None = None,
+) -> Scope:
+    """Build a validated :class:`Scope` for ``--init-scope``.
+
+    ``authorized`` is only meaningful together with an authorization reference:
+    the caller passes both after the operator confirms written authorization.
+    Without them the scope is written unauthorized and refuses to run, which is
+    the same contract as ``scope.example.json``.
+    """
+    if authorized and not (authorization_ref or "").strip():
+        raise ScopeError(
+            "refusing to mark a scope authorized without --authorization-ref: record the "
+            "written authorization you are working under"
+        )
+    try:
+        parsed_capabilities = [Capability(item) for item in capabilities]
+    except ValueError as exc:
+        allowed = ", ".join(capability.value for capability in Capability)
+        raise ScopeError(f"unknown capability: {exc}; allowed: {allowed}") from exc
+    try:
+        scope = Scope(
+            engagement=engagement,
+            authorized=authorized,
+            authorization_ref=authorization_ref,
+            targets=list(targets),
+            domains=list(domains),
+            exclude=list(exclude),
+            capabilities=parsed_capabilities,
+            max_rps=max_rps,
+            allow_passive_sources=allow_passive_sources,
+            allowed_wordlists=list(allowed_wordlists),
+            allowed_nuclei_templates=list(allowed_nuclei_templates),
+            expires=expires,
+            contact=contact,
+            notes=notes,
+        )
+    except Exception as exc:  # pydantic.ValidationError
+        raise ScopeError(f"invalid scope values: {exc}") from exc
+    return scope
+
+
+__all__ = [
+    "Scope",
+    "bootstrap_scope",
+    "load_scope",
+    "network_contains",
+    "normalize_host",
+    "write_scope",
+]

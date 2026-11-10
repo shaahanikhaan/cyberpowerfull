@@ -38,6 +38,7 @@ dev = [
 
 [project.scripts]
 cyberpowerfull = "cyberpowerfull.cli:main"
+cpf = "cyberpowerfull.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/shaahanikhaan/cyberpowerfull"

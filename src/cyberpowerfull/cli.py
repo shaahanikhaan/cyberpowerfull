@@ -41,7 +41,8 @@ DESCRIPTION = (
     "cyberpowerfull - local-only autonomous penetration-testing agent.\n"
     "Runs recon -> scanning -> validation -> reporting against an authorized target "
     "using a local open-weight model (Ollama / llama.cpp), or a deterministic "
-    "multi-tool playbook when no model is available. No chat mode. No cloud inference."
+    "multi-tool playbook when no model is available. No chat mode. No cloud inference.\n"
+    "First run: 'cyberpowerfull --lab' starts a loopback service and scans it."
 )
 
 EPILOG = """\
@@ -50,6 +51,9 @@ examples:
   cyberpowerfull --scope scope.json --target lab.internal --llm ollama:qwen3:4b --max-iterations 20
   cyberpowerfull --scope scope.json --target lab.internal --playbook full --parallel 4
   cyberpowerfull --scope scope.json --target app.example.test --playbook web
+  cyberpowerfull --lab                          # real loopback lab, one command
+  cyberpowerfull --init-scope scope.json --engagement NAME --targets HOST \
+      --authorize --authorization-ref REF       # write a validated scope
   cyberpowerfull --toolchain                    # live inventory of this host
   cyberpowerfull --doctor --scope scope.json    # pre-engagement readiness check
   cyberpowerfull --list-playbooks
@@ -279,6 +283,68 @@ def build_parser() -> argparse.ArgumentParser:
         default="q",
         metavar="NAME",
         help="parameter name used when rendering query payloads (default: q)",
+    )
+    parser.add_argument(
+        "--lab",
+        action="store_true",
+        help=(
+            "start a real loopback lab service on 127.0.0.1 and run a playbook against it "
+            "(no model, no external binaries, nothing to configure)"
+        ),
+    )
+    parser.add_argument(
+        "--lab-port",
+        type=int,
+        default=None,
+        metavar="PORT",
+        help="port for the lab service (default: first free of 8080/8443/9200/27017/6379)",
+    )
+    parser.add_argument(
+        "--init-scope",
+        metavar="PATH",
+        help="write a validated scope file instead of running anything",
+    )
+    parser.add_argument(
+        "--targets",
+        metavar="LIST",
+        help="comma-separated targets for --init-scope (e.g. app.example.test,10.0.0.5)",
+    )
+    parser.add_argument("--engagement", metavar="NAME", help="engagement name for --init-scope")
+    parser.add_argument(
+        "--authorization-ref",
+        metavar="REF",
+        help="written authorization reference for --init-scope (e.g. 'SOW-2026-014')",
+    )
+    parser.add_argument(
+        "--capabilities",
+        metavar="LIST",
+        help="comma-separated capabilities for --init-scope "
+        "(aggressive, credential_testing, external_agents)",
+    )
+    parser.add_argument("--expires", metavar="YYYY-MM-DD", help="expiry date for --init-scope")
+    parser.add_argument("--contact", metavar="EMAIL", help="contact for --init-scope")
+    parser.add_argument(
+        "--max-rps",
+        type=float,
+        default=5.0,
+        metavar="N",
+        help="rate hint recorded by --init-scope (default: 5.0)",
+    )
+    parser.add_argument(
+        "--allow-passive-sources",
+        action="store_true",
+        help="record allow_passive_sources=true in the scope written by --init-scope",
+    )
+    parser.add_argument(
+        "--authorize",
+        action="store_true",
+        help=(
+            "with --init-scope: mark the scope authorized true. Requires "
+            "--authorization-ref; without both, the written scope refuses to run"
+        ),
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="with --init-scope: overwrite an existing file"
     )
     parser.add_argument("--json", action="store_true", help="emit the trace JSON on stdout")
     parser.add_argument("--quiet", action="store_true", help="suppress per-step progress lines")
@@ -892,6 +958,135 @@ def _intel(args: argparse.Namespace) -> int:
     return 0
 
 
+def _init_scope(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    """Write a validated scope file, never a silently authorized one."""
+    from datetime import date
+
+    from cyberpowerfull.scope import bootstrap_scope, write_scope
+
+    raw_targets = args.targets or args.target or ""
+    targets = [item.strip() for item in raw_targets.split(",") if item.strip()]
+    if not targets:
+        parser.error("--init-scope requires --targets (comma-separated hosts/CIDRs)")
+    if not args.engagement:
+        parser.error("--init-scope requires --engagement (a name for the engagement)")
+    capabilities = [item.strip() for item in (args.capabilities or "").split(",") if item.strip()]
+    expires = None
+    if args.expires:
+        try:
+            expires = date.fromisoformat(args.expires)
+        except ValueError:
+            parser.error(f"--expires must be YYYY-MM-DD, got {args.expires!r}")
+    authorized = bool(args.authorize)
+    scope = bootstrap_scope(
+        engagement=args.engagement,
+        targets=targets,
+        capabilities=capabilities,
+        authorization_ref=args.authorization_ref,
+        authorized=authorized,
+        expires=expires,
+        contact=args.contact,
+        max_rps=args.max_rps,
+        allow_passive_sources=args.allow_passive_sources,
+        notes="created with --init-scope",
+    )
+    path = write_scope(args.init_scope, scope, force=args.force)
+    print(f"scope written: {path}")
+    print(f"  engagement:   {scope.engagement}")
+    print(f"  targets:      {', '.join(scope.targets)}")
+    print(
+        "  capabilities: "
+        + (", ".join(capability.value for capability in scope.capabilities) or "none granted")
+    )
+    print(f"  authorized:   {'yes' if scope.authorized else 'NO (the agent will refuse to run)'}")
+    if not scope.authorized:
+        print("")
+        print("  next: re-run with --authorize --authorization-ref REF once you hold written")
+        print('        authorization, or edit the file and set "authorized": true')
+    else:
+        print("")
+        print(f"  next: cyberpowerfull --doctor --scope {path}")
+        print(f"        cyberpowerfull --scope {path} --target {scope.targets[0]} --playbook recon")
+    return 0
+
+
+def _run_lab(args: argparse.Namespace) -> int:
+    """Serve a real loopback page and scan it, so a first run needs no setup."""
+    from cyberpowerfull.config import RunConfig
+    from cyberpowerfull.errors import ScopeError
+    from cyberpowerfull.lab import LAB_DEFAULT_PLAYBOOK, LAB_TARGET, run_local_lab
+
+    try:
+        scope = load_scope(args.scope)
+    except ScopeError as exc:
+        if Path(args.scope).exists():
+            raise
+        # Do not invent authorization: print the exact command that records one.
+        print(f"error: {exc}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("to create the loopback lab scope, run:", file=sys.stderr)
+        print(
+            "  cyberpowerfull --init-scope scope.json --engagement localhost-lab "
+            "--targets 127.0.0.1 --capabilities aggressive --authorize "
+            "--authorization-ref self-owned-lab",
+            file=sys.stderr,
+        )
+        return exc.exit_code
+    scope.require(LAB_TARGET)
+    cfg = RunConfig(
+        scope_path=Path(args.scope),
+        target=LAB_TARGET,
+        llm_spec=args.llm or f"ollama:{DEFAULT_MODEL}",
+        max_iterations=args.max_iterations,
+        max_tokens=args.max_tokens,
+        max_seconds=args.max_seconds,
+        out_dir=Path(args.out),
+        memory_path=Path(args.memory),
+        trace_path=Path(args.trace),
+        dry_run=args.dry_run,
+    )
+    cfg.ensure_dirs()
+    name = args.playbook or LAB_DEFAULT_PLAYBOOK
+    run_id = new_id("lab-")
+    with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
+        try:
+            result, port = run_local_lab(
+                scope=scope,
+                memory=memory,
+                playbook=name,
+                port=args.lab_port,
+                parallel=args.parallel or None,
+                max_steps=args.max_steps,
+                dry_run=cfg.dry_run,
+                run_id=run_id,
+                progress=None if args.quiet else _progress,
+            )
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    trace_path = save_trace(result.trace, cfg.trace_path)
+    paths = write_reports(result.trace, cfg.out_dir)
+    if args.json:
+        print(result.trace.model_dump_json(indent=2))
+    else:
+        print("")
+        print(f"lab service: http://{LAB_TARGET}:{port}/ (real loopback listener, stopped now)")
+        _print_summary(result.trace, trace_path=trace_path, report_path=paths["report"])
+        print(f"executed:    {len(result.executed)} step(s): {', '.join(result.executed)}")
+        if result.skipped:
+            print(f"skipped:     {len(result.skipped)} (host tools this lab does not need)")
+            for line in result.skipped[:6]:
+                print(f"  - {line}")
+        print("")
+        print("next: scan the thing you are authorized to test, e.g.")
+        print(
+            "  cyberpowerfull --init-scope scope.json --engagement NAME --targets HOST "
+            "--authorize --authorization-ref REF"
+        )
+        print("  cyberpowerfull --scope scope.json --target HOST --playbook recon")
+    return _run_exit_code(result.trace)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -922,9 +1117,13 @@ def main(argv: list[str] | None = None) -> int:
             or args.http_probe is not None
         ):
             return _intel(args)
+        if args.init_scope:
+            return _init_scope(parser, args)
         if args.doctor:
             return _doctor(args)
-        if args.playbook:
+        if args.lab:
+            return _run_lab(args)
+        if args.playbook and not args.lab:
             if not args.target:
                 parser.error("--playbook requires --target")
             return _run_playbook(args)

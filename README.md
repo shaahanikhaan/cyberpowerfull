@@ -25,11 +25,11 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 |---|---|
 | Reasoning | local open-weight model (Qwen3-4B / equivalent) via Ollama or llama.cpp — optional |
 | Automation | 6 deterministic playbooks, 34 ordered steps, parallel groups, fact-driven adaptivity |
-| Typed tools | 26 (22 CLI wrappers, 1 native connector, 3 external-agent adapters) |
+| Typed tools | 29 (22 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
-| Tests | 582 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Tests | 686 tests, 87% line coverage, `pytest --cov-fail-under=70` enforced in CI |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
 
 > **This repository is pentest-only.** The previous general-purpose "assistant" surface, the
@@ -190,13 +190,53 @@ src/cyberpowerfull/
 
 ---
 
+## Easy start
+
+Two commands, nothing to configure. `--lab` starts a **real** HTTP service on the loopback
+interface and runs a **real** playbook against it: no model, no scanner binaries, no fixture data.
+
+```bash
+make setup      # venv + editable install (or: ./scripts/install.sh)
+make lab        # serve 127.0.0.1:8080 and scan it with the network playbook
+```
+
+After that:
+
+```bash
+make doctor     # what this host can actually run (binaries, wordlists, templates, agents)
+make toolchain  # live inventory, install hints for everything missing
+make tools      # apt-install the scanner set on Debian/Kali (prompts for sudo, review first)
+```
+
+On your own engagement, write the scope first — the agent refuses to run without one:
+
+```bash
+cyberpowerfull --init-scope scope.json \
+    --engagement acme-q4 --targets app.example.test,10.0.0.0/24 \
+    --authorize --authorization-ref SOW-2026-014
+cyberpowerfull --scope scope.json --target app.example.test --playbook recon
+```
+
+`--init-scope` writes a validated file and refuses to mark it authorized without an
+`--authorization-ref`; without `--authorize` it writes `"authorized": false` so the file cannot be
+run by accident. `cpf` is installed as a short alias for `cyberpowerfull`.
+
+| You want | Run |
+|---|---|
+| a first run in 30 seconds | `make lab` |
+| to know what this host can do | `make doctor` |
+| to install the scanners | `make tools` |
+| a specific playbook against a real target | `cyberpowerfull --scope scope.json --target HOST --playbook web` |
+| the model-driven loop | `ollama serve & ollama pull qwen3:4b` then `cyberpowerfull --scope scope.json --target HOST` |
+| to prove a run happened | open `artifacts/report-*.md` or `--replay traces/latest.json` |
+
 ## Quick Start
 
 A runnable loopback lab: a local listener, one real run against it with a recorded decision
 stream, then the trace rendered back for review. No model, no binaries, no network.
 
 ```bash
-python -m pip install -e .
+python -m pip install -e .   # or: make setup
 python -m http.server 8000 --bind 127.0.0.1 &
 python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json
 cyberpowerfull --replay traces/latest.json
@@ -340,6 +380,13 @@ cyberpowerfull --search-exploits "apache 2.4"   # local Exploit-DB, no network
 ## Common invocations
 
 ```bash
+# First run: real loopback service + playbook, no model, no binaries
+python -m cyberpowerfull.cli --lab
+
+# Write a scope (refuses to authorize without a reference)
+python -m cyberpowerfull.cli --init-scope scope.json --engagement acme \
+    --targets app.example.test --authorize --authorization-ref SOW-2026-014
+
 # Validate scope, capabilities, tool availability, and the local model endpoint
 python -m cyberpowerfull.cli --check --scope scope.json --target 127.0.0.1
 
@@ -566,7 +613,7 @@ API-key code path for inference and none will be added.
 pip install -e ".[dev]"
 ruff check .
 black --check .
-pytest                      # 582 tests, coverage gate (70%) in pyproject.toml addopts
+pytest                      # 606 tests, coverage gate (70%) in pyproject.toml addopts
 pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```
 

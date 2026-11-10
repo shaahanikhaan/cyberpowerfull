@@ -16,12 +16,6 @@ from cyberpowerfull.models import BudgetState, Finding, Phase, Severity
 from cyberpowerfull.trace import StepRecord, TraceRecorder, save_trace
 
 
-@pytest.fixture
-def workdir(tmp_path: Path, scope_payload: dict) -> Path:
-    (tmp_path / "scope.json").write_text(json.dumps(scope_payload), encoding="utf-8")
-    return tmp_path
-
-
 class TestHelpAndListing:
     def test_help_is_pentest_only(self, capsys) -> None:
         with pytest.raises(SystemExit) as excinfo:
