@@ -30,7 +30,7 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
-| Tests | 831 tests, 87% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Tests | 876 tests, 84% line coverage, `pytest --cov-fail-under=70` enforced in CI |
 | Outputs per run | Markdown report, findings JSON, SARIF 2.1.0, `run.json` manifest, trace |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
 
@@ -213,7 +213,7 @@ SECURITY.md  CHANGELOG.md   # policy and history
 .github/                    # CI, release, CodeQL, issue forms, PR template, CODEOWNERS
 scripts/                    # install.sh (setup) and release_check.py (pre-tag checks)
 Makefile                    # setup / lab / doctor / tools / test / docs / release-check
-tests/                      # 682 tests across CLI, tools, playbooks, lab, docs, repo hygiene
+tests/                      # 876 tests across CLI, tools, playbooks, lab, docs, repo hygiene
 ```
 
 ---
@@ -673,7 +673,7 @@ API-key code path for inference and none will be added.
 ```bash
 make setup                  # venv + editable install + readiness check
 make lab                    # real loopback lab: scan, no model, no binaries
-make test                   # 831 tests, coverage gate (70%) in pyproject.toml addopts
+make test                   # 876 tests, coverage gate (70%) via make test + CI
 make lint                   # ruff + black, non-mutating
 pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```

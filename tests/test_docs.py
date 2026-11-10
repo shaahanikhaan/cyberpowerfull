@@ -207,9 +207,14 @@ class TestRepositoryFiles:
 
 class TestTooling:
     def test_pytest_coverage_gate_configured(self) -> None:
+        # The gate lives in `make test` and CI, not in addopts: a plain `pytest`
+        # must work with only pytest installed (no pytest-cov plugin required).
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert "--cov=cyberpowerfull" in pyproject
-        assert "--cov-fail-under=70" in pyproject
+        addopts = next(line for line in pyproject.splitlines() if "addopts" in line)
+        assert "--cov" not in addopts
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        assert "--cov=cyberpowerfull" in makefile
+        assert "--cov-fail-under=70" in makefile
 
     def test_ruff_and_black_configured(self) -> None:
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")

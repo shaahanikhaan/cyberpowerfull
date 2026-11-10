@@ -54,14 +54,14 @@ tools: ## install the scanner set on Debian/Kali (needs sudo; review first)
 	@echo "then: sudo nuclei -update-templates"
 
 docs: ## verify the documentation set (index, links, required files)
-	$(BIN)/python -m pytest tests/test_repository.py -q --no-cov
+	$(BIN)/python -m pytest tests/test_repository.py -q
 	@echo "docs: index at docs/README.md"
 
 release-check: lint test ## verify version, changelog, badge, and tag consistency before tagging
 	$(BIN)/python scripts/release_check.py
 
 test: ## run the test suite with the coverage gate
-	$(BIN)/python -m pytest
+	$(BIN)/python -m pytest --cov=cyberpowerfull --cov-report=term-missing --cov-fail-under=70
 
 lint: ## ruff + black, non-mutating
 	$(BIN)/ruff check .

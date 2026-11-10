@@ -160,7 +160,7 @@ It is deliberately not a new execution engine. If you change guardrails, they st
   callback wiring is unit-tested, because it needs a TTY.
 - **SARIF/manifest:** shape, rule ids (CVE → CWE → title slug), severity→level mapping, and
   `properties.verified` are asserted; nothing here has been validated against GitHub's uploader.
-- **Coverage gate:** 70% is configured in `pyproject.toml` `addopts`; the suite sits at ~87%.
+- **Coverage gate:** 70% is enforced by `make test` and CI (plain `pytest` runs without the coverage plugin); the suite sits at ~84%.
 
 ## 6. Recipes: how to extend the project
 

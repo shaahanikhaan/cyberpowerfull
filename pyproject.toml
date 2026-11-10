@@ -58,7 +58,7 @@ cyberpowerfull = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-addopts = "-q --strict-markers --cov=cyberpowerfull --cov-report=term-missing --cov-fail-under=70"
+addopts = "-q --strict-markers"
 filterwarnings = ["error::DeprecationWarning"]
 
 [tool.coverage.run]
