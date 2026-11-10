@@ -35,6 +35,20 @@ class Phase(str, Enum):
     REPORTING = "reporting"
 
 
+class Capability(str, Enum):
+    """Explicit, opt-in engagement permissions declared in ``scope.json``.
+
+    A tool that needs one of these is blocked by the worker layer unless the
+    scope grants it. Nothing is enabled by default: a scope with no
+    ``capabilities`` entry runs only passive and polite checks.
+    """
+
+    AGGRESSIVE = "aggressive"
+    CREDENTIAL_TESTING = "credential_testing"
+    EXTERNAL_AGENTS = "external_agents"
+    DESTRUCTIVE = "destructive"
+
+
 class Severity(str, Enum):
     """Finding severity, ordered from informational to critical."""
 
@@ -168,6 +182,7 @@ def estimate_tokens(text: str) -> int:
 
 __all__ = [
     "BudgetState",
+    "Capability",
     "Decision",
     "Finding",
     "Phase",

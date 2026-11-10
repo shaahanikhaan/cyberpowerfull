@@ -15,8 +15,28 @@ The agent is designed to make unauthorized use hard, not to make it look accepta
   fingerprint recorded in every trace, so a run can be attributed to a declared engagement.
 - Out-of-band interaction is disabled (`nuclei -no-interactsh`), cloud inference endpoints are
   rejected, and tool subprocesses run with cloud credentials removed from the environment.
+- **Aggressive capabilities are explicit opt-ins.** `masscan`, `naabu`, `hydra`, `strix`,
+  `pentagi`, and `sn1per` are blocked before execution unless `scope.json` grants `aggressive`,
+  `credential_testing`, or `external_agents`. The granted list is part of the scope fingerprint.
 - Exploitation is proof-only: no persistence, no lateral movement, no data extraction, no
   denial-of-service behaviour.
+- Recovered credentials are redacted before they reach the trace or the report.
+
+## External agents
+
+`strix`, `pentagi`, and `sn1per` are third-party autonomous systems. When granted the
+`external_agents` capability they run with their own tooling and, for Strix and PentAGI, their own
+cloud-hosted model, which means engagement data (targets, responses, findings) is sent to the
+provider you configure for them.
+
+- They never run without the capability, and the target is re-checked against `scope.json` first.
+- The delegated instruction always states the in-scope target and the engagement constraints.
+- Cost and runtime are bounded (`max_budget_usd`, `max_turns`, `max_wait_s`).
+- Their output is treated as a hypothesis: findings are only promoted to a report when the
+  adapter can attach concrete evidence.
+
+If your engagement forbids third-party processing, do not grant `external_agents`. The core loop
+and every playbook work without it.
 
 Do not remove these controls in a fork and redistribute the result as this project.
 

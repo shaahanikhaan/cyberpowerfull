@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 import pytest
-from tests.conftest import SCOPE_PAYLOAD
 
 from cyberpowerfull.errors import ScopeError, ScopeViolation
 from cyberpowerfull.models import Phase
 from cyberpowerfull.scope import Scope, load_scope, normalize_host
+from tests.conftest import SCOPE_PAYLOAD
 
 
 class TestNormalizeHost:

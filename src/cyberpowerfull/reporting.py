@@ -106,14 +106,14 @@ def render_markdown(trace: Trace) -> str:
     if trace.steps:
         lines.append(
             _table(
-                ["Step", "Action", "Tool", "Status", "Difficulty", "Findings", "Reason"],
+                ["Step", "Action", "Tool", "Node", "Status", "Findings", "Reason"],
                 [
                     [
                         str(step.index),
                         step.action,
                         step.tool or "-",
+                        step.node or "-",
                         (step.result or {}).get("status", (step.error and "error") or "-"),
-                        str(step.tda.get("level", "-")),
                         str(len(step.finding_ids)),
                         (step.reason or step.error or "")[:80],
                     ]
@@ -127,6 +127,13 @@ def render_markdown(trace: Trace) -> str:
     if trace.stop_reason in {"inference_failed", "policy_violation"} and trace.error:
         lines.extend(["", "## Run error", "", f"`{trace.error}`"])
 
+    if trace.backend.startswith("playbook:"):
+        inference_note = (
+            "This run executed a deterministic playbook: no model was invoked, every step "
+            "was selected by the playbook definition and gated by the same worker policy."
+        )
+    else:
+        inference_note = "All inference ran on a local open-weight model."
     lines.extend(
         [
             "",
@@ -134,7 +141,7 @@ def render_markdown(trace: Trace) -> str:
             "",
             "Recon precedes scanning, scanning precedes validation. Findings are derived only "
             "from recorded tool output stored in append-only memory; hypotheses remain in the "
-            "attack tree until confirmed. All inference ran on a local open-weight model.",
+            f"attack tree until confirmed. {inference_note}",
             "",
         ]
     )

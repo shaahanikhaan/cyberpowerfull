@@ -2,12 +2,24 @@
   "engagement": "localhost-lab",
   "authorized": true,
   "authorization_ref": "self-owned-lab-instance",
-  "targets": ["127.0.0.1", "localhost"],
-  "domains": ["localhost"],
+  "targets": [
+    "127.0.0.1",
+    "localhost"
+  ],
+  "domains": [
+    "localhost"
+  ],
   "exclude": [],
-  "allowed_phases": ["recon", "scanning", "validation"],
+  "allowed_phases": [
+    "recon",
+    "scanning",
+    "validation"
+  ],
   "max_rps": 5,
   "expires": "2027-12-31",
   "contact": "lab-owner@localhost",
-  "notes": "Default scope shipped with the repository: the loopback lab instance only. Replace with your engagement scope and written authorization reference before testing anything else."
+  "notes": "Default scope shipped with the repository: the loopback lab instance only. 'aggressive' is granted because the only targets are 127.0.0.1/localhost. Replace every value with your engagement scope before testing anything else.",
+  "capabilities": [
+    "aggressive"
+  ]
 }

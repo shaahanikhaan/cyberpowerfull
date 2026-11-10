@@ -1,0 +1,21 @@
+{# Skill pack: cms_wordpress #}
+## Skill: WordPress and CMS
+applies_when: Use when fingerprinting identifies WordPress or another CMS.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - /wp-json, /wp-login.php, generator meta tags
+  - plugin and theme directories with version files
+probe_order:
+  1. Confirm the CMS and core version with wpscan enumeration
+  2. Enumerate vulnerable plugins and themes passively
+  3. Check user enumeration and XML-RPC behaviour
+  4. Validate only the highest-severity matched vulnerability
+validation_criteria:
+  - the version or component is confirmed by a served asset
+  - the vulnerability match names the component and the fixed version
+evidence_required:
+  - component name, version, advisory or CVE, and the served file that proves it
+constraints:
+  - no credential spray unless credential_testing is granted

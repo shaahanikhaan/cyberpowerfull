@@ -1,0 +1,142 @@
+{
+  "schema_version": "1.0",
+  "agent": "cyberpowerfull",
+  "agent_version": "3.0.0",
+  "run_id": "play-e7d2e7a8031b",
+  "model": "none",
+  "backend": "playbook:network",
+  "engagement": "localhost-lab",
+  "target": "127.0.0.1",
+  "scope_fingerprint": "254cfb7225695482dda232e7c987ab9fda18ab1aafcfc3bcde62099d55ee1bed",
+  "started_at": "2026-11-10T09:23:34.687705+00:00",
+  "finished_at": "2026-11-10T09:23:34.701690+00:00",
+  "stop_reason": "playbook_complete",
+  "error": null,
+  "budget": {
+    "max_iterations": 80,
+    "max_tokens": 24000,
+    "max_seconds": 900,
+    "iterations": 1,
+    "tokens_used": 0,
+    "seconds_used": 0.014
+  },
+  "steps": [
+    {
+      "index": 1,
+      "role": "root",
+      "action": "playbook",
+      "phase": "recon",
+      "tool": "tcp_probe",
+      "args": {
+        "target": "127.0.0.1",
+        "ports": [
+          21,
+          22,
+          23,
+          25,
+          53,
+          80,
+          110,
+          111,
+          135,
+          139,
+          143,
+          443,
+          445,
+          993,
+          995,
+          1433,
+          1723,
+          3306,
+          3389,
+          5432,
+          5900,
+          6379,
+          8080,
+          8443,
+          9200,
+          27017
+        ],
+        "timeout_s": 1.0
+      },
+      "reason": "native TCP connect sweep",
+      "thought": "playbook step net-tcp",
+      "node": "net-tcp",
+      "tda": {},
+      "result": {
+        "status": "ok",
+        "exit_code": null,
+        "duration_ms": 2,
+        "argv": [
+          "tcp_probe",
+          "--host",
+          "127.0.0.1",
+          "--ports",
+          "21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1433,1723,3306,3389,5432,5900,6379,8080,8443,9200,27017",
+          "--timeout",
+          "1.0"
+        ],
+        "stdout_excerpt": "{\"open\": [22, 111], \"errors\": {\"21\": \"ConnectionRefusedError\", \"23\": \"ConnectionRefusedError\", \"25\": \"ConnectionRefusedError\", \"53\": \"ConnectionRefusedError\", \"80\": \"ConnectionRefusedError\", \"110\": \"ConnectionRefusedError\", \"135\": \"ConnectionRefusedError\", \"139\": \"ConnectionRefusedError\", \"143\": \"ConnectionRefusedError\", \"443\": \"ConnectionRefusedError\", \"445\": \"ConnectionRefusedError\", \"993\": \"ConnectionRefusedError\", \"995\": \"ConnectionRefusedError\", \"1433\": \"ConnectionRefusedError\", \"1723\": \"Co",
+        "observations": [
+          "tcp_probe open=[22, 111]",
+          "tcp_probe closed/filtered=['110', '135', '139', '143', '1433', '1723', '21', '23', '25', '27017']"
+        ],
+        "error": null
+      },
+      "finding_ids": [
+        "f-e74f73f6b290",
+        "f-53b8cd3b5e5f"
+      ],
+      "started_at": "2026-11-10T09:23:34.689735+00:00",
+      "duration_ms": 2,
+      "error": null
+    }
+  ],
+  "findings": [
+    {
+      "id": "f-e74f73f6b290",
+      "title": "Open TCP port 22",
+      "severity": "info",
+      "confidence": 0.9,
+      "target": "127.0.0.1",
+      "endpoint": "127.0.0.1:22",
+      "evidence": "tcp connect succeeded on 22",
+      "tool": "tcp_probe",
+      "skill": "information_disclosure",
+      "cwe": null,
+      "cve": null,
+      "cvss": null,
+      "remediation": null,
+      "verified": false,
+      "phase": "recon",
+      "created_at": "2026-11-10T09:23:34.692223Z"
+    },
+    {
+      "id": "f-53b8cd3b5e5f",
+      "title": "Open TCP port 111",
+      "severity": "info",
+      "confidence": 0.9,
+      "target": "127.0.0.1",
+      "endpoint": "127.0.0.1:111",
+      "evidence": "tcp connect succeeded on 111",
+      "tool": "tcp_probe",
+      "skill": "information_disclosure",
+      "cwe": null,
+      "cve": null,
+      "cvss": null,
+      "remediation": null,
+      "verified": false,
+      "phase": "recon",
+      "created_at": "2026-11-10T09:23:34.692247Z"
+    }
+  ],
+  "attack_tree": {},
+  "memory_stats": {
+    "run_id": "play-e7d2e7a8031b",
+    "steps": 1,
+    "findings": 2,
+    "attempts": 1,
+    "success_rate": 1.0,
+    "evidence_confidence": 0.1725
+  }
+}

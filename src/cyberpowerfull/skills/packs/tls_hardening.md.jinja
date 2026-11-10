@@ -1,0 +1,20 @@
+{# Skill pack: tls_hardening #}
+## Skill: TLS Configuration Review
+applies_when: Use when an HTTPS endpoint or TLS service is in scope.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - legacy protocol versions or NULL/EXPORT ciphers offered
+  - certificate names that do not match the host, or expired chains
+probe_order:
+  1. Run testssl against the confirmed endpoint with a LOW severity floor
+  2. Record protocol support, cipher preference, and certificate metadata
+  3. Separate configuration weaknesses from exploitable vulnerabilities
+validation_criteria:
+  - the negotiated protocol or cipher is observed in the tool output
+  - certificate details come from the presented chain
+evidence_required:
+  - protocol/cipher identifiers, certificate subject and dates, tool identifier
+constraints:
+  - no downgrade flooding; single connection attempts per check

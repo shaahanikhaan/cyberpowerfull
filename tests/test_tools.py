@@ -8,17 +8,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from tests.conftest import (
-    DALFOX_JSON,
-    FFUF_JSON,
-    HTTPX_JSONL,
-    NIKTO_STDOUT,
-    NMAP_XML,
-    NUCLEI_JSONL,
-    SQLMAP_STDOUT,
-    SUBFINDER_STDOUT,
-    completed,
-)
 
 from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.errors import InvalidToolArguments
@@ -34,6 +23,17 @@ from cyberpowerfull.tools.registry import catalog, get_tool, installed_tools, to
 from cyberpowerfull.tools.sqlmap import SqlmapTool
 from cyberpowerfull.tools.subfinder import SubfinderTool
 from cyberpowerfull.tools.tcp_probe import TcpProbeTool
+from tests.conftest import (
+    DALFOX_JSON,
+    FFUF_JSON,
+    HTTPX_JSONL,
+    NIKTO_STDOUT,
+    NMAP_XML,
+    NUCLEI_JSONL,
+    SQLMAP_STDOUT,
+    SUBFINDER_STDOUT,
+    completed,
+)
 
 
 def patch_subprocess(stdout: str = "", stderr: str = "", returncode: int = 0, side_effect=None):

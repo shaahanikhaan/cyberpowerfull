@@ -45,18 +45,48 @@ SKILL_NAMES = [
     "file_uploads",
     "information_disclosure",
     "subdomain_takeover",
+    "subdomain_enum",
+    "network_services",
+    "tls_hardening",
+    "api_security",
+    "graphql",
+    "deserialization",
+    "cms_wordpress",
+    "cloud_metadata",
+    "active_directory",
+    "container_kubernetes",
+    "credential_testing",
+    "exploit_availability",
+    "external_validation",
 ]
 
 TOOL_NAMES = [
-    "nmap",
-    "httpx",
+    "tcp_probe",
     "subfinder",
-    "nuclei",
+    "amass",
+    "dnsrecon",
+    "httpx",
+    "katana",
+    "wafw00f",
+    "nmap",
+    "masscan",
+    "naabu",
+    "whatweb",
     "nikto",
     "ffuf",
+    "gobuster",
+    "feroxbuster",
+    "arjun",
+    "testssl",
+    "wpscan",
+    "nuclei",
     "sqlmap",
     "dalfox",
-    "tcp_probe",
+    "searchsploit",
+    "hydra",
+    "strix",
+    "pentagi",
+    "sn1per",
 ]
 
 
@@ -77,6 +107,9 @@ class TestReadme:
             "## Quick Start",
             "## Supported Tools",
             "## Skills",
+            "## Automation playbooks",
+            "## External agents: Strix, PentAGI, Sn1per",
+            "## Host toolchain and local knowledge",
             "## How the agent behaves",
             "## Development",
             "## License",
@@ -103,7 +136,7 @@ class TestReadme:
 
     def test_badges(self) -> None:
         assert "badge.svg" in README
-        assert "version-2.0.0" in README
+        assert "version-3.0.0" in README
         assert "actions/workflows/ci.yml/badge.svg" in README
 
     @pytest.mark.parametrize("term", HYPE_TERMS)

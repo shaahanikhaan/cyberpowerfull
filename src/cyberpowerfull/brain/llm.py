@@ -328,6 +328,15 @@ def build_client(spec: str | None = None, config: ModelConfig | None = None) -> 
         return ReplayClient(path=spec.split(":", 1)[1])
     backend, _, model = spec.partition(":")
     backend = (backend or cfg.backend).lower()
+    if "://" in model:
+        # ``ollama:http://host:11434`` is a common slip: the endpoint is a config
+        # value (CYBERPOWERFULL_LLM_ENDPOINT / ModelConfig), not part of the model id.
+        # Silently using the URL as a model name would look like it worked.
+        raise LLMError(
+            f"{model!r} is an endpoint, not a model id: pass a model name after the colon "
+            f"and set the endpoint with CYBERPOWERFULL_LLM_ENDPOINT "
+            f"(loopback only, currently {cfg.endpoint!r})"
+        )
     model = model or cfg.model
     endpoint = (
         cfg.endpoint if backend == cfg.backend else DEFAULT_ENDPOINTS.get(backend, cfg.endpoint)

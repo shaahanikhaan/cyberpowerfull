@@ -28,6 +28,7 @@ from cyberpowerfull.brain.prompt import (
 from cyberpowerfull.brain.tda import DifficultyLevel, TaskDifficultyAssessor, TDAInput, TDAReport
 from cyberpowerfull.config import RunConfig, ToolPolicy
 from cyberpowerfull.errors import LLMError, PolicyViolation, ScopeViolation
+from cyberpowerfull.inventory import build_toolchain
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import (
     BudgetState,
@@ -40,17 +41,49 @@ from cyberpowerfull.models import (
     utcnow,
 )
 from cyberpowerfull.scope import Scope
-from cyberpowerfull.skills import skill_names
+from cyberpowerfull.skills import select_skills
 from cyberpowerfull.tools.base import BaseTool, ToolResult, ToolStatus
 from cyberpowerfull.tools.registry import catalog, get_tool
 from cyberpowerfull.trace import StepRecord, Trace, TraceRecorder
 
-#: Deterministic delegation allowlist: which worker may run which tool.
-WORKER_TOOL_ALLOWLIST: dict[str, frozenset[str]] = {
-    "recon": frozenset({"nmap", "httpx", "subfinder", "tcp_probe", "nikto"}),
-    "scan": frozenset({"nmap", "nikto", "ffuf", "nuclei", "tcp_probe", "httpx"}),
-    "validate": frozenset({"nuclei", "sqlmap", "dalfox", "ffuf", "httpx"}),
+#: Phase each worker owns. The allowlist is derived from the registry, so adding
+#: a tool wrapper automatically makes it delegable to the right worker.
+WORKER_PHASES: dict[str, tuple[Phase, ...]] = {
+    "recon": (Phase.RECON,),
+    "scan": (Phase.SCANNING,),
+    "validate": (Phase.VALIDATION,),
+    "external": (),
 }
+
+#: Cross-phase tools a worker may additionally run (surface mapping needs a port
+#: sweep, validation needs an HTTP probe, and so on).
+WORKER_EXTRA_TOOLS: dict[str, tuple[str, ...]] = {
+    "recon": ("nmap", "nikto", "tcp_probe"),
+    "scan": ("httpx", "tcp_probe"),
+    "validate": ("ffuf", "httpx"),
+    "external": (),
+}
+
+
+def _worker_allowlist() -> dict[str, frozenset[str]]:
+    from cyberpowerfull.tools.registry import all_tools
+
+    tools = all_tools()
+    mapping: dict[str, frozenset[str]] = {}
+    for worker, phases in WORKER_PHASES.items():
+        if worker == "external":
+            mapping[worker] = frozenset(name for name, tool in tools.items() if tool.external)
+            continue
+        allowed = {
+            name for name, tool in tools.items() if tool.phase in phases and not tool.external
+        }
+        allowed.update(name for name in WORKER_EXTRA_TOOLS[worker] if name in tools)
+        mapping[worker] = frozenset(allowed)
+    return mapping
+
+
+#: Deterministic delegation allowlist: which worker may run which tool.
+WORKER_TOOL_ALLOWLIST: dict[str, frozenset[str]] = _worker_allowlist()
 
 
 class DelegationRequest(BaseModel):
@@ -58,7 +91,7 @@ class DelegationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    agent: Literal["recon", "scan", "validate"] = "recon"
+    agent: Literal["recon", "scan", "validate", "external"] = "recon"
     tool: str = Field(min_length=1, max_length=64)
     args: dict[str, Any] = Field(default_factory=dict)
     node: str | None = None
@@ -125,6 +158,17 @@ class WorkerAgent:
                 error=f"phase {tool.phase.value!r} is not permitted by scope.json",
             )
 
+        capability = tool.required_capability
+        if capability is not None and not self.scope.allows(capability):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    f"tool {tool.name!r} requires the {capability.value!r} capability; add it "
+                    "to scope.json only when the engagement authorises it"
+                ),
+            )
+
         target = request.args.get("target")
         if not isinstance(target, str) or not target.strip():
             return ToolResult(
@@ -167,6 +211,8 @@ class Orchestrator:
         skills: list[str] | None = None,
         context_window: int = 32768,
         run_id: str | None = None,
+        toolchain: Any | None = None,
+        skill_limit: int = 8,
     ) -> None:
         self.scope = scope
         self.config = config
@@ -177,7 +223,8 @@ class Orchestrator:
         self.assessor = assessor or TaskDifficultyAssessor()
         self.context_window = context_window
         self.run_id = run_id or new_id("run-")
-        self.skills = skills or skill_names()
+        self.skills = skills
+        self.skill_limit = skill_limit
         self.tools = tools or {}
         self.tree = tree or AttackTree(target=target)
         self.root = RootAgent(client)
@@ -192,6 +239,7 @@ class Orchestrator:
         self._tool_catalog = (
             [tool.describe() for tool in self.tools.values()] if self.tools else catalog()
         )
+        self.toolchain = toolchain or build_toolchain(versions=False, include_wordlists=True)
 
     # -- planning ----------------------------------------------------------
     def _assess(self, budget: BudgetState) -> TDAReport:
@@ -224,8 +272,23 @@ class Orchestrator:
             memory_digest=self.memory.digest(),
             difficulty=tda,
             tree_digest=self.tree.digest(),
-            skill_names=self.skills,
+            skill_names=(
+                self.skills
+                if self.skills is not None
+                else select_skills(
+                    node_phase,
+                    [node.skill for node in self.tree.selectable_nodes() if node.skill],
+                    limit=self.skill_limit,
+                )
+            ),
             tools=self._tool_catalog,
+            toolchain_summary=self.toolchain.summary_lines(),
+            capabilities=[capability.value for capability in self.scope.capabilities],
+            external_agents=[
+                f"{name}: {'available' if info.get('available') else 'unavailable'} "
+                f"(requires {', '.join(info.get('requires', [])) or 'nothing'})"
+                for name, info in sorted(self.toolchain.external_agents.items())
+            ],
         )
 
     # -- execution ---------------------------------------------------------
@@ -365,6 +428,35 @@ class Orchestrator:
             node_id = request.node if request.node and self.tree.has(request.node) else node.id
             if request.expand:
                 self.tree.expand(node_id, request.expand, tda.max_depth)
+
+            cached_failure = self.memory.negative_cache_hit(request.tool, request.args)
+            if cached_failure and not self.config.dry_run:
+                self._failed_attempts += 1
+                record = self._record_step(
+                    recorder,
+                    index=budget.iterations,
+                    action="delegate",
+                    phase=node.phase,
+                    tool=request.tool,
+                    args=request.args,
+                    node=node_id,
+                    tda=tda,
+                    started_at=step_started,
+                    started_monotonic=t0,
+                    reason=decision.reason,
+                    thought=decision.thought,
+                    error=f"negative cache: {cached_failure}",
+                )
+                self._persist_step(record, decision, ok=False, error=cached_failure)
+                self._emit(progress, record)
+                known_failures.append(f"{request.tool}: {cached_failure}")
+                last_result_payload = {
+                    "tool": request.tool,
+                    "status": "skipped",
+                    "observations": ["identical invocation already failed; not retried"],
+                    "error": cached_failure,
+                }
+                continue
 
             worker = self._workers[request.agent]
             result = worker.execute(request, dry_run=self.config.dry_run)

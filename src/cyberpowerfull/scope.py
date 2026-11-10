@@ -19,7 +19,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from cyberpowerfull.errors import ScopeError
-from cyberpowerfull.models import Phase
+from cyberpowerfull.models import Capability, Phase
 
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
 _HOST_ALLOWED = re.compile(r"^[A-Za-z0-9.\-_:\[\]]+$")
@@ -72,6 +72,7 @@ class Scope(BaseModel):
     allowed_phases: list[Phase] = Field(
         default_factory=lambda: [Phase.RECON, Phase.SCANNING, Phase.VALIDATION]
     )
+    capabilities: list[Capability] = Field(default_factory=list)
     max_rps: float = Field(default=5.0, gt=0, le=100)
     expires: date | None = None
     contact: str | None = Field(default=None, max_length=200)
@@ -154,6 +155,19 @@ class Scope(BaseModel):
     def phase_allowed(self, phase: Phase) -> bool:
         return phase in self.allowed_phases
 
+    def allows(self, capability: Capability | str | None) -> bool:
+        """Return ``True`` when the engagement grants ``capability``.
+
+        ``None`` means "no special permission required" and is always allowed.
+        """
+        if capability is None:
+            return True
+        try:
+            wanted = capability if isinstance(capability, Capability) else Capability(capability)
+        except ValueError:
+            return False
+        return wanted in self.capabilities
+
     def fingerprint(self) -> str:
         """Stable hash of the scope, embedded in every trace for audit."""
         payload = self.model_dump(mode="json", exclude_none=True)
@@ -169,6 +183,7 @@ class Scope(BaseModel):
             f"in_scope_domains: {', '.join(self.domains) or 'none'}",
             f"excluded: {', '.join(self.exclude) or 'none'}",
             f"allowed_phases: {', '.join(p.value for p in self.allowed_phases)}",
+            f"granted_capabilities: {', '.join(c.value for c in self.capabilities) or 'none'}",
             f"max_requests_per_second: {self.max_rps}",
             f"expires: {self.expires.isoformat() if self.expires else 'no-expiry'}",
             f"scope_fingerprint: {self.fingerprint()[:16]}",

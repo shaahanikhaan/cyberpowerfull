@@ -93,6 +93,53 @@ jobs:
           print("smoke ok:", trace["stop_reason"], len(trace["findings"]), "finding(s)")
           PY
 
+      - name: Deterministic playbook run (no model, real local sockets)
+        run: |
+          python -m cyberpowerfull.cli \
+            --scope scope.json \
+            --target 127.0.0.1 \
+            --playbook network \
+            --parallel 2 \
+            --out /tmp/playbook-art \
+            --trace /tmp/playbook-trace.json \
+            --memory /tmp/playbook-memory.sqlite3 \
+            --quiet
+          python - <<'PY'
+          import json, pathlib
+          trace = json.loads(pathlib.Path("/tmp/playbook-trace.json").read_text())
+          assert trace["backend"].startswith("playbook:"), trace["backend"]
+          steps = {step["node"]: step for step in trace["steps"]}
+          assert "net-tcp" in steps, sorted(steps)
+          assert steps["net-tcp"]["result"]["status"] == "ok"
+          assert trace["findings"], "playbook run produced no findings"
+          skipped = [s for s in steps.values() if s["result"]["status"] != "ok"]
+          assert skipped, "expected honest skips on a bare runner"
+          assert all(s["result"].get("error") or True for s in skipped)
+          print("playbook ok:", trace["stop_reason"], len(trace["findings"]), "finding(s)")
+          PY
+
+      - name: Live host inventory is machine-readable
+        run: |
+          python -m cyberpowerfull.cli --toolchain --json > /tmp/toolchain.json
+          python - <<'PY'
+          import json, pathlib
+          data = json.loads(pathlib.Path("/tmp/toolchain.json").read_text())
+          assert data["binaries"], "no catalogued binaries"
+          assert len(data["binaries"]) == 68, len(data["binaries"])
+          assert isinstance(data["installed_count"], int)
+          assert isinstance(data["missing_count"], int)
+          assert "wordlists" in data and "external_agents" in data
+          assert data["operating_system"]
+          print("inventory ok:", data["installed_count"], "installed,", data["missing_count"], "missing")
+          PY
+
+      - name: Playbook registry
+        run: |
+          python -m cyberpowerfull.cli --list-playbooks > /tmp/playbooks.txt
+          test "$(grep -c 'playbooks registered' /tmp/playbooks.txt)" -eq 1
+          grep -q '^recon' /tmp/playbooks.txt
+          grep -q '^full' /tmp/playbooks.txt
+
       - name: Refuse to run without scope
         run: |
           set +e

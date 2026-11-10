@@ -1,0 +1,20 @@
+{# Skill pack: deserialization #}
+## Skill: Insecure Deserialization
+applies_when: Use when the application accepts serialised objects or signed blobs.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - base64 blobs that decode to pickled, Java, .NET or PHP serialised data
+  - cookies or tokens with class names or type metadata
+probe_order:
+  1. Identify the serialisation format from the decoded structure
+  2. Test type confusion with a benign, non-executing object swap
+  3. Stop at proof of deserialisation; never deploy a gadget chain payload
+validation_criteria:
+  - the server deserialises an object the client should not control, evidenced by
+    a deterministic behavioural difference
+evidence_required:
+  - the original blob, the modified blob, and the differing response
+constraints:
+  - no remote code execution payloads, no reverse connections

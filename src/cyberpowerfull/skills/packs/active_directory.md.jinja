@@ -1,0 +1,20 @@
+{# Skill pack: active_directory #}
+## Skill: Active Directory
+applies_when: Use when the engagement includes domain-joined hosts and a DC in scope.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - LDAP, Kerberos, SMB, WinRM exposed on the assessed segment
+  - anonymous LDAP bind or null SMB sessions
+probe_order:
+  1. Identify the domain and the domain controller from DNS and SMB
+  2. Test anonymous bind and null session read access, read-only
+  3. Enumerate users and groups only with an account provided by the client
+  4. Map findings to concrete misconfigurations, not to exploit names
+validation_criteria:
+  - the read confirms an exposure such as anonymous LDAP enumeration
+evidence_required:
+  - protocol, query, response, and the account used
+constraints:
+  - no password spraying, no relay, no ticket attacks

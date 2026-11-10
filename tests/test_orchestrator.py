@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-from tests.conftest import FailingLLM, FakeLLM
 
 from cyberpowerfull.brain.attack_tree import AttackTree
 from cyberpowerfull.brain.orchestrator import (
@@ -21,6 +20,7 @@ from cyberpowerfull.errors import PolicyViolation
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import Finding, Phase, Severity
 from cyberpowerfull.tools.base import BaseTool, HostInput, ToolResult, ToolStatus
+from tests.conftest import FailingLLM, FakeLLM
 
 
 class StubTool(BaseTool):
@@ -188,7 +188,8 @@ class TestRunLoop:
         orchestrator.run()
         system_prompt, step_prompt = client.calls[0]
         assert "authorized_scope" in system_prompt
-        assert "## Skill: SQL Injection" in system_prompt
+        assert "## 9. host_toolchain" in system_prompt
+        assert "## Skill: Information Disclosure" in system_prompt
         assert "127.0.0.1" in step_prompt
 
     def test_policy_violation_stops_run(self, scope) -> None:
