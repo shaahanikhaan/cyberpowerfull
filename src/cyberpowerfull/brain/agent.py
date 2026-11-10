@@ -335,8 +335,12 @@ class AutoAgent:
             try:
                 if self._memory.negative_cache_hit(tool, args):
                     return None
-            except Exception:
-                pass
+            except Exception as exc:
+                # Memory negative-cache lookup is best-effort: do not block
+                # planning if the backing store is unavailable or misbehaves.
+                self._dead_tools.setdefault(
+                    tool, f"negative-cache lookup failed: {exc.__class__.__name__}"
+                )
         return (tool, args, reason, thought)
 
     def _escalations(self, facts: Facts) -> list[tuple[str, dict[str, Any] | None, str, str]]:
