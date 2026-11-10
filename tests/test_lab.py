@@ -319,7 +319,10 @@ class TestProjectEntrypoints:
 
     def test_readme_documents_the_easy_start(self) -> None:
         readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
-        assert "## Easy start" in readme
+        assert "## Start here" in readme
+        assert "./run.sh" in readme
+        assert "cpf example.com" in readme
+        assert "--i-am-authorized" in readme
         assert "make lab" in readme
         assert "--init-scope" in readme
         assert "--authorization-ref" in readme

@@ -4,11 +4,12 @@ Read this before changing anything. It records what exists, what must not break,
 live, what the tests actually prove, and what is deliberately unfinished. `README.md` is the
 public description; this file is the internal map.
 
-- **Version:** 3.2.0
-- **Last known good:** `main` after the 3.2.0 merge, CI green on Python 3.10–3.12
-- **Test suite:** 682 passed, 3 skipped, 88% line coverage (gate: 70%)
+- **Version:** 4.0.0
+- **Last known good:** `main` after the 4.0.0 merge, CI green on Python 3.10–3.12
+- **Test suite:** 831 passed, 3 skipped, 87% line coverage (gate: 70%)
 - **Audience note:** this repository is a pentest-only agent. It refuses to run without an
-  authorized `scope.json`. Do not "fix" that away.
+  authorized `scope.json`. One-command mode can *write* that file, but only after a typed
+  attestation that is recorded in it. Do not "fix" that away.
 
 ---
 
@@ -29,13 +30,19 @@ what the machine can actually run; nothing is bundled or simulated.
 | 2.1.0 | Readiness and safety hardening: run-isolated SQLite reads, strict scope/DNS checks, bounded subprocess output, loopback transport, truthful exit codes, owner-only artifacts | `CHANGELOG.md`, `tests/test_readiness_*.py` |
 | 3.0.0 | 26 tools, capability model, 6 playbooks, live inventory, offline knowledge base, 29 skills, Strix/PentAGI/Sn1per adapters | `CHANGELOG.md`, `tests/test_playbook.py`, `tests/test_capabilities.py` |
 | 3.1.0 | One-command first run: `--lab`, `--init-scope`, `make`, `scripts/install.sh`, `cpf` | `src/cyberpowerfull/lab.py`, `tests/test_lab.py` |
-| 3.2.0 | Repository maturity: handoff/guide/roadmap docs, issue + PR templates, release and CodeQL workflows, doc-hygiene tests | `docs/`, `AGENTS.md`, `CONTRIBUTING.md`, `.github/`, `tests/test_repository.py` |
+| 3.2.0 | Offline CVE intelligence: advisory corpus + importers, version ranger, correlator, proof-only payload engine (55 payloads / 14 skills), native `http_probe`, bash toolkit | `intel/`, `payloads/`, `tools/bash/`, `tests/test_intel.py` |
+| 3.3.0 | Repository maturity: handoff/guide/roadmap docs, issue + PR templates, release and CodeQL workflows, doc-hygiene tests | `docs/`, `AGENTS.md`, `CONTRIBUTING.md`, `.github/`, `tests/test_repository.py` |
+| 4.0.0 | One command: `cpf TARGET` / `./run.sh TARGET` derives the scope, attests authorization, picks a profile, runs, and explains the result; SARIF + run manifest artefacts | `onepass.py`, `run.sh`, `tests/test_onepass.py`, `reporting.py` |
 
 ## 3. Module map (what lives where, and why)
 
 ```
 src/cyberpowerfull/
 ├── cli.py            argparse + every handler. Dispatch order matters (see §7).
+├── onepass.py        ONE-COMMAND MODE: target -> host, attestation -> scope file, profile ->
+│                     playbook/budget, plain-language plan, progress lines, next steps.
+│                     Pure helpers (target_host, ensure_scope, render_plan, next_steps) are
+│                     tested without touching the network.
 ├── lab.py            real loopback http.server + playbook run (the "first run" path)
 ├── scope.py          scope.json model, capability parsing, host matching, fingerprint,
 │                     bootstrap_scope()/write_scope() for --init-scope
@@ -47,7 +54,9 @@ src/cyberpowerfull/
 ├── playbook.py       6 deterministic playbooks, Facts, PlaybookRunner, COMMON_TCP_PORTS
 ├── trace.py          Trace/StepRecord (schema 1.0). `skipped` is additive: list of reasons
 ├── reporting.py      render_markdown() (playbook-aware methodology, skipped-step section),
-│                     write_reports() -> report-<run_id>.md + findings-<run_id>.json
+│                     render_sarif() (SARIF 2.1.0), render_run_json() (run manifest),
+│                     write_reports() -> report/findings/sarif/run artefacts for one run
+├── native_scan.py    in-process scanning helpers used by the native tools
 ├── storage.py        owner-only atomic writes for artefacts
 ├── templating.py     Jinja2 environment used by prompt and skill rendering
 ├── brain/
@@ -59,37 +68,75 @@ src/cyberpowerfull/
 │   └── orchestrator.py       RootAgent (delegate|terminate) + WorkerAgent (guarded execute)
 ├── tools/
 │   ├── base.py               BaseTool: validate -> build_argv -> apply_policy -> run -> parse
-│   ├── registry.py           26 tools, allowlists per worker, external agent catalogue
+│   ├── registry.py           29 tools, allowlists per worker, external agent catalogue
 │   ├── extract.py            shared report/JSON finding extractors
-│   └── <26 wrappers>.py
+│   ├── http_probe.py         native single-request probe (no binary needed)
+│   ├── payload.py            proof-only payload builder (catalogue lives in payloads/)
+│   ├── cve_correlate.py      component -> advisory correlation tool
+│   └── <26 more wrappers>.py
+├── intel/            offline advisory corpus: store.py (SQLite, merge-on-import),
+│                     importer.py (NVD 2.0/1.1, KEV, native), versioning.py (tokeniser/ranger),
+│                     correlator.py, service.py (DEFAULT_INTEL_PATH), models.py, data/
+├── payloads/         library.py (55 proof-only templates / 14 skills), engine.py, models.py
 ├── memory/store.py   append-only SQLite; UPDATE/DELETE trigged; MemoryView for the model
 └── skills/packs/     29 Markdown/Jinja skill packs
+
+tools/bash/           cve_hunt.sh, payload_run.sh, scan_cycle.sh + lib/common.sh — same scope
+                      engine, usable without Python
+run.sh                zero-setup wrapper: creates .venv, installs, then runs cpf
+scripts/install.sh    explicit setup (+ --with-tools apt install), never edits a scope
+scripts/release_check.py  version / changelog / badge consistency (make release-check)
 ```
 
 Documentation set: `README.md` (public, tested by `tests/test_docs.py`), `docs/GUIDE.md` (user
-guide), `docs/KALI.md` (host layout), `docs/INTEGRATIONS.md` (Strix/PentAGI/Sn1per),
+guide; §0 is one-command mode), `docs/KALI.md` (host layout), `docs/INTEGRATIONS.md`
+(Strix/PentAGI/Sn1per), `docs/INTEL.md` (offline corpus), `docs/PAYLOADS.md` (proof vectors),
 `docs/ROADMAP.md` (next versions), `docs/readiness-audit.md` (2.0-era audit with a v3 note),
 `AGENTS.md` (agent-facing quick map), `CONTRIBUTING.md` (dev workflow).
+
+### One-command mode (`cpf TARGET`) — how it is built
+
+`cli._one_pass()` is the only caller of `onepass.py`; keep the layering that way.
+
+1. `target_host()` reduces a URL/`host:port`/path to the host the scope engine can match.
+2. `ensure_scope()` loads an existing scope (and refuses to widen it) or writes a new one after
+   the `attest` callback returns True. The CLI's callback is `--i-am-authorized` or a typed `yes`
+   at a TTY; a non-TTY without the flag fails closed with exit 3.
+3. `profile_for()` maps `--profile {quick,standard,deep}` to a real playbook plus budgets.
+4. `PlaybookRunner` executes it exactly as `--playbook` would: same policy, same worker
+   allowlists, same skip accounting.
+5. `write_reports()` writes report + findings JSON + SARIF + run manifest; `next_steps()` turns
+   the actual skips and findings into the closing advice.
+
+It is deliberately not a new execution engine. If you change guardrails, they still only live in
+`scope.py`, `tools/base.py` and `brain/orchestrator.py`.
 
 ## 4. Invariants (do not break these)
 
 1. **No scope, no run.** Missing/invalid/unauthorized/expired `scope.json` → exit 3, before any
-   tool. No force flag, no interactive bypass.
-2. **Per-call scope re-validation.** `WorkerAgent.execute()` re-checks the target (and the
+   tool. No force flag, no `--force`, no unauthenticated bypass.
+2. **Attested, never assumed.** One-command mode may *create* a scope only from an explicit
+   attestation (`--i-am-authorized`, or a typed `yes` on a TTY); the claim is recorded in
+   `authorization_ref` and in `notes`. Non-interactive without the flag fails closed (exit 3), and
+   an existing scope is never widened — an out-of-scope host is an error, not a merge.
+3. **Per-call scope re-validation.** `WorkerAgent.execute()` re-checks the target (and the
    canonical validated target) for every delegation → exit 4 when the CLI target is outside.
-3. **Capability gate before argv.** `masscan`, `naabu` need `aggressive`; `hydra` needs
+4. **Capability gate before argv.** `masscan`, `naabu` need `aggressive`; `hydra` needs
    `credential_testing`; `strix`, `pentagi`, `sn1per` need `external_agents`. Unknown/absent
    capability ⇒ `ToolStatus.BLOCKED`, never executed.
-4. **Loopback-only inference.** `assert_local_endpoint()`; no API-key code path. An endpoint
+5. **Loopback-only inference.** `assert_local_endpoint()`; no API-key code path. An endpoint
    passed as a model id (`ollama:http://…`) is rejected with an actionable message.
-5. **Append-only memory.** SQLite triggers reject UPDATE/DELETE; the model only sees
+6. **Append-only memory.** SQLite triggers reject UPDATE/DELETE; the model only sees
    `MemoryView`.
-6. **No shell.** argv lists only, `shell=False`, sanitized env, spooled bounded output.
-7. **Proof-only exploitation.** No persistence, lateral movement, data extraction, or DoS;
+7. **No shell.** argv lists only, `shell=False`, sanitized env, spooled bounded output.
+8. **Proof-only exploitation.** No persistence, lateral movement, data extraction, or DoS;
    `searchsploit` reports availability only; hydra credentials are redacted.
-8. **Honest reporting.** Skipped/failed work is disclosed (`trace.skipped`, report
+9. **Offline intelligence.** The corpus is local; feeds are operator-supplied files and the
+   agent never fetches one. A correlation is a *candidate*: `verified=False` until local evidence
+   confirms it, and the score is a confidence, never a verdict.
+10. **Honest reporting.** Skipped/failed work is disclosed (`trace.skipped`, report
    `## Skipped steps`); no fabricated findings, paths, or inventories.
-9. **Exit-code contract.** 0 ok, 1 fatal, 2 usage, 3 scope, 4 out-of-scope, 5 inference, 6
+11. **Exit-code contract.** 0 ok, 1 fatal, 2 usage, 3 scope, 4 out-of-scope, 5 inference, 6
    tool/knowledge failure, 7 policy violation, 8 unknown playbook. Failed runs still write
    artifacts and then exit non-zero.
 
@@ -103,7 +150,13 @@ guide), `docs/KALI.md` (host layout), `docs/INTEGRATIONS.md` (Strix/PentAGI/Sn1p
 - **Where regressions hide:** `tests/test_tools_extended.py` mocks `subprocess.run` by writing
   into the spooled stdout/stderr handles — a mock that only sets `return_value.stdout` looks like
   an empty result. `tests/test_readiness_*.py` encode the hardened scope/DNS/storage behaviour.
-- **Coverage gate:** 70% is configured in `pyproject.toml` `addopts`; the suite sits at ~88%.
+- **One-command mode:** `tests/test_onepass.py` proves the scope is created only after
+  attestation, never widened when it already exists, that `--plan` sends nothing, and that a dry
+  run writes all four artefacts. The interactive prompt itself is the thin part: only the
+  callback wiring is unit-tested, because it needs a TTY.
+- **SARIF/manifest:** shape, rule ids (CVE → CWE → title slug), severity→level mapping, and
+  `properties.verified` are asserted; nothing here has been validated against GitHub's uploader.
+- **Coverage gate:** 70% is configured in `pyproject.toml` `addopts`; the suite sits at ~87%.
 
 ## 6. Recipes: how to extend the project
 
