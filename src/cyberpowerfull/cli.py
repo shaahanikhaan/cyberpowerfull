@@ -11,6 +11,7 @@ import json
 import os
 import sqlite3
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from cyberpowerfull import DEFAULT_MODEL, __version__
@@ -34,6 +35,7 @@ from cyberpowerfull.models import new_id
 from cyberpowerfull.playbook import PlaybookRunner, describe_playbooks, get_playbook
 from cyberpowerfull.reporting import severity_breakdown, write_reports
 from cyberpowerfull.scope import load_scope
+from cyberpowerfull.selfupdate import run_update
 from cyberpowerfull.skills import skill_index
 from cyberpowerfull.tools.registry import catalog, external_agent_catalog
 from cyberpowerfull.trace import load_trace, save_trace, summarize_trace
@@ -51,6 +53,7 @@ EPILOG = """\
 examples:
   cpf example.com                              # one command: scope, profile, scan, report
   cpf https://app.example.com --profile deep   # standard plan with a two-hour budget
+  cpf example.com -m web                       # one area only: recon|web|network|stealth|api|full
   cpf example.com --plan                       # show what it would do, run nothing
   cpf 127.0.0.1 --i-am-authorized              # non-interactive attestation
   cyberpowerfull --scope scope.json --target 127.0.0.1
@@ -62,6 +65,7 @@ examples:
   cyberpowerfull --init-scope scope.json --engagement NAME --targets HOST \
       --authorize --authorization-ref REF       # write a validated scope
   cyberpowerfull --toolchain                    # live inventory of this host
+  cyberpowerfull --update                       # pull the repo, reinstall, exit (no scan)
   cyberpowerfull --doctor --scope scope.json    # pre-engagement readiness check
   cyberpowerfull --list-playbooks
   cyberpowerfull --agents
@@ -115,7 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
             "runs, and writes the report)"
         ),
     )
-    parser.add_argument("--target", metavar="HOST", help="authorized target host or URL")
+    parser.add_argument(
+        "-t", "--target", metavar="HOST", help="authorized target host (or pass it positionally)"
+    )
     parser.add_argument(
         "--profile",
         default=None,
@@ -233,6 +239,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--playbook",
         metavar="NAME",
         help="run a deterministic multi-tool playbook instead of the reasoning loop",
+    )
+    parser.add_argument(
+        "-m",
+        "--mode",
+        dest="playbook",
+        metavar="NAME",
+        help=(
+            "sn1per-style alias for --playbook: recon, web, network, stealth, api, "
+            "or full (works with 'cpf TARGET' too)"
+        ),
     )
     parser.add_argument(
         "--parallel",
@@ -404,7 +420,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--force", action="store_true", help="with --init-scope: overwrite an existing file"
+        "--force",
+        action="store_true",
+        help=(
+            "with --init-scope: overwrite an existing file; "
+            "with --update: pull over uncommitted changes"
+        ),
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help=(
+            "pull the git checkout this copy was installed from and reinstall it, "
+            "then exit (runs nothing)"
+        ),
     )
     parser.add_argument("--json", action="store_true", help="emit the trace JSON on stdout")
     parser.add_argument("--quiet", action="store_true", help="suppress per-step progress lines")
@@ -829,6 +858,11 @@ def _knowledge(args: argparse.Namespace) -> int:
     return 0
 
 
+def _update(args: argparse.Namespace) -> int:
+    """``cpf --update``: pull the source checkout and reinstall this copy."""
+    return run_update(force=args.force)
+
+
 def _run_playbook(args: argparse.Namespace) -> int:
     from cyberpowerfull.config import RunConfig
 
@@ -1142,6 +1176,11 @@ def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
     )
 
     profile = profile_for(args.profile)
+    if args.playbook:
+        # `cpf TARGET -m web`: the explicit mode wins over the profile's playbook
+        # while the profile keeps its budgets. Validate before any attestation.
+        profile = replace(profile, playbook=args.playbook)
+        get_playbook(profile.playbook)
     host = target_host(raw_target)
     if args.scope_explicit:
         scope_path = Path(args.scope)
@@ -1302,6 +1341,7 @@ def _quickstart() -> int:
     print("")
     print("    cpf example.com                 # or https://example.com")
     print("    cpf example.com --profile deep  # longer, wider pass")
+    print("    cpf example.com -m web          # one area: recon, web, network, stealth, api, full")
     print("    cpf example.com --plan          # show the plan, send nothing")
     print("")
     print("  You will be asked once, in the terminal, to confirm you are authorized to test")
@@ -1404,6 +1444,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     _apply_environment(parser, args)
     try:
+        if args.update:
+            return _update(args)
+        if args.ai and args.playbook and not args.lab:
+            # Each path used to silently ignore one of them; say so instead.
+            parser.error("choose one: --ai (model-chosen steps) or --mode/--playbook (fixed plan)")
         if args.list_tools:
             return _list_tools()
         if args.list_skills:

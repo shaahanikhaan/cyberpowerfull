@@ -36,6 +36,7 @@ what the machine can actually run; nothing is bundled or simulated.
 | 4.0.0 | One command: `cpf TARGET` / `./run.sh TARGET` derives the scope, attests authorization, picks a profile, runs, and explains the result; SARIF + run manifest artefacts | `onepass.py`, `run.sh`, `tests/test_onepass.py`, `reporting.py` |
 | 5.0.0 | Built-in auto agent (default backend, Ollama removed), live foreground display, faster parallel runs, testssl.sh wrapper rewritten against v3.2.5 | `brain/agent.py`, `live.py`, `brain/llm.py`, `tools/testssl.py`, `tests/test_agent.py`, `tests/test_live.py`, `tests/test_testssl_wrapper.py` |
 | 5.0.1 | Missing-tool experience: per-package installer (+`metasploit-framework`), condensed `--check`, pre-run coverage note, plain-install `pytest`, `engagements/` ignored | `scripts/install.sh`, `Makefile`, `cli.py`, `pyproject.toml`, `.gitignore`, `tests/test_cli.py`, `tests/test_lab.py` |
+| 5.1.0 | Sn1per-style UX (`-t`/`-m`), `--update` self-update, PentAGI v2.2.0 rewrite, verified Strix/Sn1per/Nuclei integrations | `selfupdate.py`, `cli.py`, `tools/pentagi.py`, `tools/strix.py`, `tools/sn1per.py`, `tools/nuclei.py`, `playbook.py`, `inventory.py`, `docs/INTEGRATIONS.md`, `tests/test_selfupdate.py` |
 
 ## 3. Module map (what lives where, and why)
 
@@ -47,6 +48,8 @@ src/cyberpowerfull/
 │                     Pure helpers (target_host, ensure_scope, render_plan, next_steps) are
 │                     tested without touching the network.
 ├── lab.py            real loopback http.server + playbook run (the "first run" path)
+├── selfupdate.py     --update: git pull --ff-only + pip reinstall;
+│                     refuses a dirty tree without --force, never sudoes
 ├── scope.py          scope.json model, capability parsing, host matching, fingerprint,
 │                     bootstrap_scope()/write_scope() for --init-scope
 ├── models.py         Phase, Capability, Severity, Finding, Decision, BudgetState
@@ -108,6 +111,8 @@ guide; §0 is one-command mode), `docs/KALI.md` (host layout), `docs/INTEGRATION
    the `attest` callback returns True. The CLI's callback is `--i-am-authorized` or a typed `yes`
    at a TTY; a non-TTY without the flag fails closed with exit 3.
 3. `profile_for()` maps `--profile {quick,standard,deep}` to a real playbook plus budgets.
+   `-m`/`--mode` overrides the playbook (budgets stay on the profile); an unknown mode fails
+   with exit 8 before any attestation.
 4. `PlaybookRunner` executes it exactly as `--playbook` would: same policy, same worker
    allowlists, same skip accounting.
 5. `write_reports()` writes report + findings JSON + SARIF + run manifest; `next_steps()` turns
@@ -185,8 +190,9 @@ It is deliberately not a new execution engine. If you change guardrails, they st
 
 - **SQLite is thread-bound.** Never touch `MemoryStore` from worker threads; do cache lookups and
   recording on the scheduler thread (`playbook.py` does this).
-- **dispatch order in `main()`** is load-bearing: listings → toolchain → knowledge → init-scope →
-  doctor → lab → playbook → replay → check → render-prompt → run.
+- **dispatch order in `main()`** is load-bearing: update → listings → toolchain → knowledge/intel →
+  init-scope → one-pass → doctor → lab → playbook → replay → check → render-prompt → run.
+  `--ai` with `-m`/`--playbook` is a usage error: each path used to silently ignore one of them.
 - **`--lab` implies target `127.0.0.1`** and needs it inside the scope; it never invents one.
 - **masscan** prints banners before JSON: use `_first_json_array()` (`raw_decode`), not a regex.
 - **JSON reports** (PentAGI, nuclei) must go through record extractors, not prose extraction.

@@ -565,28 +565,37 @@ def _os_release() -> dict[str, str]:
 
 
 def _external_agents(binaries: dict[str, BinaryInfo]) -> dict[str, Any]:
-    """Describe the external autonomous systems reachable from this host."""
+    """Describe the external autonomous systems reachable from this host.
+
+    ``available`` means runnable here and now, not just present: strix needs
+    the docker CLI (it sandboxes in Docker), PentAGI needs a token with its
+    URL (calls fail 401 without one), and sniper refuses non-root outright.
+    """
     strix = binaries.get("strix")
+    docker = binaries.get("docker")
     sniper = binaries.get("sniper")
     pentagi_url = os.environ.get("PENTAGI_URL") or os.environ.get("PENTAGI_BASE_URL")
     pentagi_token = os.environ.get("PENTAGI_API_TOKEN")
+    is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
     return {
         "strix": {
-            "available": bool(strix and strix.installed),
+            "available": bool(strix and strix.installed and docker and docker.installed),
             "binary": strix.alternative_used if strix else None,
+            "docker_present": bool(docker and docker.installed),
             "requires": ["docker", "STRIX_LLM", "LLM_API_KEY"],
             "capability": "external_agents",
         },
         "pentagi": {
-            "available": bool(pentagi_url),
+            "available": bool(pentagi_url and pentagi_token),
             "endpoint": pentagi_url,
             "token_configured": bool(pentagi_token),
             "requires": ["PENTAGI_URL", "PENTAGI_API_TOKEN"],
             "capability": "external_agents",
         },
         "sn1per": {
-            "available": bool(sniper and sniper.installed),
+            "available": bool(sniper and sniper.installed and is_root),
             "binary": sniper.alternative_used if sniper else None,
+            "running_as_root": is_root,
             "requires": ["root", "sniper"],
             "capability": "external_agents",
         },

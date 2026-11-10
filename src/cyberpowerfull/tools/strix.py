@@ -1,8 +1,8 @@
 """Strix wrapper: headless run of the open-source Strix agent.
 
-Verified against usestrix/strix v1.7.0 (``strix/interface/cli_args.py``,
-``strix/interface/main.py``, ``strix/report/{writer,state}.py``,
-``strix/core/paths.py``):
+Verified against usestrix/strix v1.7.1 (``strix/interface/cli_args.py``,
+``strix/interface/{main,environment}.py``, ``strix/report/{writer,state}.py``,
+``strix/core/paths.py``, ``strix/config/settings.py``):
 
 * headless runs use ``-n``; findings make strix exit **2** (``--fail-on``
   threshold, default: any finding), errors exit **1**, clean runs exit 0;
@@ -20,6 +20,7 @@ directory's ``vulnerabilities.json`` first — console prose is only a fallback.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -28,8 +29,9 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
+from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.models import Capability, Finding, Phase, Severity
-from cyberpowerfull.tools.base import BaseTool, UrlInput, truncate
+from cyberpowerfull.tools.base import BaseTool, ToolInput, ToolStatus, UrlInput, truncate
 from cyberpowerfull.tools.extract import extract_report_findings, merge_findings
 
 _RUN_DIR_NAMES = ("strix_runs", "agent_runs", ".strix_runs")
@@ -106,6 +108,37 @@ class StrixTool(BaseTool):
             ]
         )
         return argv
+
+    def _execute(self, args: ToolInput, argv: list[str], policy: ToolPolicy):
+        result = super()._execute(args, argv, policy)
+        combined = f"{result.stdout}\n{result.stderr}"
+        if "DOCKER NOT INSTALLED" in combined:
+            return dataclasses.replace(
+                result,
+                status=ToolStatus.ERROR,
+                error=(
+                    "strix needs the docker CLI on PATH (it runs the sandbox in "
+                    "Docker); install Docker and re-run"
+                ),
+            )
+        if "MISSING REQUIRED ENVIRONMENT VARIABLES" in combined:
+            return dataclasses.replace(
+                result,
+                status=ToolStatus.ERROR,
+                error=(
+                    "strix needs STRIX_LLM (model name, e.g. "
+                    "'openrouter/z-ai/glm-5.3') and usually LLM_API_KEY in the "
+                    "environment; export them and re-run"
+                ),
+            )
+        if result.status is not ToolStatus.OK and (
+            "model_connection_failed" in combined or "ModelConnectionError" in combined
+        ):
+            return dataclasses.replace(
+                result,
+                error="strix could not reach its model (check STRIX_LLM/LLM_API_KEY)",
+            )
+        return result
 
     # -- run discovery -----------------------------------------------------
     def run_dirs(self) -> list[Path]:
@@ -192,8 +225,11 @@ class StrixTool(BaseTool):
             endpoint = record.get("endpoint") or record.get("target")
             evidence_parts = [
                 str(record.get("description") or "").strip(),
+                str(record.get("impact") or "").strip(),
+                str(record.get("technical_analysis") or "").strip(),
                 str(record.get("poc_description") or "").strip(),
                 str(record.get("evidence") or "").strip(),
+                str(record.get("confidence_rationale") or "").strip(),
             ]
             method = str(record.get("method") or "").strip()
             if method:

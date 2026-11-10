@@ -154,6 +154,19 @@ class TestCatalogue:
         ids = [step.id for step in playbook.steps]
         assert len(ids) == len(set(ids))
 
+    def test_web_nuclei_step_uses_focused_tags(self) -> None:
+        from cyberpowerfull.playbook import Facts
+
+        facts = Facts(target="127.0.0.1")
+        facts.add_url("http://127.0.0.1/")
+        for step in get_playbook("web").steps:
+            if step.id != "web-nuclei":
+                continue
+            args = step.args(facts)
+            assert args is not None
+            assert args["tags"]  # full-store runs would outlive the step budget
+            assert "cve" in args["tags"]
+
 
 class TestFacts:
     def test_absorb_ports_urls_and_tech(self) -> None:

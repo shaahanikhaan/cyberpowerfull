@@ -633,6 +633,45 @@ class TestSn1per:
         with pytest.raises(InvalidToolArguments):
             Sn1perTool().validate({"target": "127.0.0.1", "workspace": "../etc"})
 
+    def test_port_modes_require_a_port(self) -> None:
+        tool = Sn1perTool()
+        for mode in ("port", "webporthttp", "webporthttps"):
+            with pytest.raises(InvalidToolArguments):
+                tool.validate({"target": "127.0.0.1", "mode": mode})
+        args = tool.validate({"target": "127.0.0.1", "mode": "port", "port": 443})
+        assert tool.build_argv(args) == ["sniper", "-t", "127.0.0.1", "-m", "port", "-p", "443"]
+
+    def test_discover_mode_is_rejected(self) -> None:
+        # discover needs a CIDR target; a single-target tool must not offer it.
+        with pytest.raises(InvalidToolArguments):
+            Sn1perTool().validate({"target": "127.0.0.1", "mode": "discover"})
+
+    def test_port_error_hint_maps_to_actionable_error(self) -> None:
+        def execute(argv, **kwargs):
+            kwargs["stdout"].write(b"Error: You need to enter a port number.\n")
+            return completed("", "", 0)
+
+        with (
+            mock.patch("cyberpowerfull.tools.base.shutil.which", return_value="/usr/bin/sniper"),
+            mock.patch("cyberpowerfull.tools.base.subprocess.run", side_effect=execute),
+        ):
+            result = Sn1perTool().run({"target": "127.0.0.1", "mode": "normal"})
+        assert result.status is ToolStatus.ERROR
+        assert "'-p <port>'" in (result.error or "")
+
+    def test_root_refusal_maps_to_blocked(self) -> None:
+        def execute(argv, **kwargs):
+            kwargs["stderr"].write(b"This script must be run as root\n")
+            return completed("", "", 1)
+
+        with (
+            mock.patch("cyberpowerfull.tools.base.shutil.which", return_value="/usr/bin/sniper"),
+            mock.patch("cyberpowerfull.tools.base.subprocess.run", side_effect=execute),
+        ):
+            result = Sn1perTool().run({"target": "127.0.0.1", "mode": "normal"})
+        assert result.status is ToolStatus.BLOCKED
+        assert "as root" in (result.error or "")
+
     def test_parses_real_loot_files(self, tmp_path: Path) -> None:
         loot = tmp_path / "loot" / "127.0.0.1"
         (loot / "vulnerabilities").mkdir(parents=True)
@@ -677,6 +716,32 @@ class TestStrix:
         args = tool.validate({"target": "https://127.0.0.1", "instruction": "line1\nline2"})
         assert "line1 line2" in tool.build_argv(args)[-1]
 
+    def test_docker_missing_maps_to_actionable_error(self) -> None:
+        def execute(argv, **kwargs):
+            kwargs["stderr"].write(b"DOCKER NOT INSTALLED\n")
+            return completed("", "", 1)
+
+        with (
+            mock.patch("cyberpowerfull.tools.base.shutil.which", return_value="/usr/bin/strix"),
+            mock.patch("cyberpowerfull.tools.base.subprocess.run", side_effect=execute),
+        ):
+            result = StrixTool().run({"target": "https://127.0.0.1"})
+        assert result.status is ToolStatus.ERROR
+        assert "docker CLI" in (result.error or "")
+
+    def test_missing_model_env_maps_to_actionable_error(self) -> None:
+        def execute(argv, **kwargs):
+            kwargs["stderr"].write(b"MISSING REQUIRED ENVIRONMENT VARIABLES\n")
+            return completed("", "", 1)
+
+        with (
+            mock.patch("cyberpowerfull.tools.base.shutil.which", return_value="/usr/bin/strix"),
+            mock.patch("cyberpowerfull.tools.base.subprocess.run", side_effect=execute),
+        ):
+            result = StrixTool().run({"target": "https://127.0.0.1"})
+        assert result.status is ToolStatus.ERROR
+        assert "STRIX_LLM" in (result.error or "")
+
     def test_parse_console_and_run_directory(self, tmp_path: Path, monkeypatch) -> None:
         runs = tmp_path / "strix_runs" / "run-1"
         runs.mkdir(parents=True)
@@ -713,7 +778,7 @@ class TestPentagi:
         assert "PENTAGI_URL" in (result.error or "")
 
     def test_full_flow(self, monkeypatch) -> None:
-        monkeypatch.setenv("PENTAGI_URL", "https://127.0.0.1:8443")
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
         monkeypatch.setenv("PENTAGI_API_TOKEN", "token")
         calls: list[tuple[str, str]] = []
 
@@ -721,15 +786,27 @@ class TestPentagi:
             calls.append((method, path))
             body = payload or {}
             query = str(body.get("query", ""))
+            assert "flow(flowId:" in query or "CreateFlow" in query or "tasks(" in query
             if "CreateFlow" in query:
                 return 200, json.dumps(
                     {"data": {"createFlow": {"id": "flow-1", "status": "created"}}}
                 )
             if "FlowStatus" in query:
                 return 200, json.dumps({"data": {"flow": {"id": "flow-1", "status": "finished"}}})
-            if "FlowReport" in query:
+            if "FlowTasks" in query:
                 return 200, json.dumps(
-                    {"data": {"flow": {"report": "HIGH: SQL injection in /login"}}}
+                    {
+                        "data": {
+                            "tasks": [
+                                {
+                                    "id": "t1",
+                                    "title": "login tests",
+                                    "status": "finished",
+                                    "result": "HIGH: SQL injection in /login",
+                                }
+                            ]
+                        }
+                    }
                 )
             return 404, "not found"
 
@@ -739,6 +816,90 @@ class TestPentagi:
         assert result.status is ToolStatus.OK
         assert any(path == "/api/v1/graphql" for _method, path in calls)
         assert "SQL injection" in " ".join(f.title for f in result.findings)
+
+    def test_rest_fallback_uses_envelope_and_trailing_slashes(self, monkeypatch) -> None:
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
+        monkeypatch.setenv("PENTAGI_API_TOKEN", "token")
+        calls: list[tuple[str, str, dict | None]] = []
+
+        def fake_http(method, path, payload, *, timeout):
+            calls.append((method, path, payload))
+            if path == "/api/v1/graphql":
+                return 500, "graphql down"
+            if (method, path) == ("POST", "/api/v1/flows/"):
+                assert payload == {"input": mock.ANY, "provider": "openai"}
+                body = {"status": "success", "data": {"id": 7, "status": "running"}}
+                return 201, json.dumps(body)
+            if (method, path) == ("GET", "/api/v1/flows/7"):
+                body = {"status": "success", "data": {"id": 7, "status": "finished"}}
+                return 200, json.dumps(body)
+            if (method, path) == ("GET", "/api/v1/flows/7/tasks/"):
+                body = {
+                    "status": "success",
+                    "data": [
+                        {
+                            "id": 1,
+                            "title": "xss tests",
+                            "status": "finished",
+                            "result": "MEDIUM: reflected XSS in /search",
+                        }
+                    ],
+                }
+                return 200, json.dumps(body)
+            return 404, json.dumps({"status": "error", "message": "no such route"})
+
+        monkeypatch.setattr(PentagiTool, "_http", staticmethod(fake_http))
+        tool = PentagiTool()
+        result = tool.run({"target": "https://127.0.0.1", "max_wait_s": 5, "poll_s": 1})
+        assert result.status is ToolStatus.OK
+        assert "reflected XSS" in " ".join(f.title for f in result.findings)
+
+    def test_waiting_flow_reports_actionable_error(self, monkeypatch) -> None:
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
+
+        def fake_http(method, path, payload, *, timeout):
+            query = str((payload or {}).get("query", ""))
+            if "CreateFlow" in query:
+                return 200, json.dumps({"data": {"createFlow": {"id": "f9"}}})
+            if "FlowStatus" in query:
+                return 200, json.dumps({"data": {"flow": {"id": "f9", "status": "waiting"}}})
+            return 200, json.dumps({"data": {"tasks": []}})
+
+        monkeypatch.setattr(PentagiTool, "_http", staticmethod(fake_http))
+        tool = PentagiTool()
+        result = tool.run({"target": "https://127.0.0.1", "max_wait_s": 5, "poll_s": 1})
+        assert result.status is ToolStatus.ERROR
+        assert "waiting for user input" in (result.error or "")
+
+    def test_failed_flow_reports_actionable_error(self, monkeypatch) -> None:
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
+
+        def fake_http(method, path, payload, *, timeout):
+            query = str((payload or {}).get("query", ""))
+            if "CreateFlow" in query:
+                return 200, json.dumps({"data": {"createFlow": {"id": "f3"}}})
+            if "FlowStatus" in query:
+                return 200, json.dumps({"data": {"flow": {"id": "f3", "status": "failed"}}})
+            return 200, json.dumps({"data": {"tasks": []}})
+
+        monkeypatch.setattr(PentagiTool, "_http", staticmethod(fake_http))
+        tool = PentagiTool()
+        result = tool.run({"target": "https://127.0.0.1", "max_wait_s": 5, "poll_s": 1})
+        assert result.status is ToolStatus.ERROR
+        assert "failed in PentAGI" in (result.error or "")
+
+    def test_rejected_token_reports_actionable_error(self, monkeypatch) -> None:
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
+        monkeypatch.setenv("PENTAGI_API_TOKEN", "wrong")
+        monkeypatch.setattr(
+            PentagiTool,
+            "_http",
+            staticmethod(lambda method, path, payload, *, timeout: (401, "unauthorized")),
+        )
+        tool = PentagiTool()
+        result = tool.run({"target": "https://127.0.0.1", "max_wait_s": 5, "poll_s": 1})
+        assert result.status is ToolStatus.ERROR
+        assert "PENTAGI_API_TOKEN" in (result.error or "")
 
     def test_flow_creation_failure_is_surfaced(self, monkeypatch) -> None:
         monkeypatch.setenv("PENTAGI_URL", "https://127.0.0.1:8443")
@@ -753,17 +914,17 @@ class TestPentagi:
         assert "could not create a PentAGI flow" in (result.error or "")
 
     def test_unfinished_flow_times_out(self, monkeypatch) -> None:
-        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8443")
-        monkeypatch.setattr(
-            PentagiTool,
-            "_http",
-            staticmethod(
-                lambda method, path, payload, *, timeout: (
-                    200,
-                    json.dumps({"data": {"createFlow": {"id": "f1", "status": "new"}}}),
-                )
-            ),
-        )
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
+
+        def fake_http(method, path, payload, *, timeout):
+            query = str((payload or {}).get("query", ""))
+            if "CreateFlow" in query:
+                return 200, json.dumps({"data": {"createFlow": {"id": "f1"}}})
+            if "FlowStatus" in query:
+                return 200, json.dumps({"data": {"flow": {"id": "f1", "status": "running"}}})
+            return 200, json.dumps({"data": {"tasks": []}})
+
+        monkeypatch.setattr(PentagiTool, "_http", staticmethod(fake_http))
         clock = iter(range(0, 10_000, 10))
         monkeypatch.setattr("cyberpowerfull.tools.pentagi.time.monotonic", lambda: next(clock))
         monkeypatch.setattr("cyberpowerfull.tools.pentagi.time.sleep", lambda _s: None)
