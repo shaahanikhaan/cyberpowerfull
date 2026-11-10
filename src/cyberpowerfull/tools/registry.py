@@ -19,6 +19,7 @@ from cyberpowerfull.tools.httpx_probe import HttpxTool
 from cyberpowerfull.tools.hydra import HydraTool
 from cyberpowerfull.tools.katana import KatanaTool
 from cyberpowerfull.tools.masscan import MasscanTool
+from cyberpowerfull.tools.metasploit import MetasploitTool
 from cyberpowerfull.tools.naabu import NaabuTool
 from cyberpowerfull.tools.nikto import NiktoTool
 from cyberpowerfull.tools.nmap import NmapTool
@@ -53,6 +54,7 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     NmapTool,
     MasscanTool,
     NaabuTool,
+    MetasploitTool,
     WhatwebTool,
     NiktoTool,
     FfufTool,

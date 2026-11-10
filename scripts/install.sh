@@ -87,18 +87,22 @@ say "tools: $("$VENV_DIR/bin/cyberpowerfull" --toolchain | head -1)"
 
 cat <<EOF
 
-Ready. Two commands to see it work:
+Ready. The shortest path:
 
-  $VENV_DIR/bin/cyberpowerfull --lab            # real loopback lab, no model needed
-  $VENV_DIR/bin/cyberpowerfull --doctor         # what this host can run
+  ./run.sh TARGET                 # install once, then scan + report (asks you to attest)
 
-For a real engagement, write a scope first (it refuses to run without one):
+See it work with nothing to configure:
+
+  ./run.sh --lab                  # real loopback service, scanned end to end
+  ./run.sh --doctor               # what this host can run
+
+Write a scope by hand instead of attesting at the prompt:
 
   $VENV_DIR/bin/cyberpowerfull --init-scope scope.json \\
       --engagement NAME --targets HOST \\
       --authorize --authorization-ref REF
 
-Then: $VENV_DIR/bin/cyberpowerfull --scope scope.json --target HOST --playbook recon
+Then: $VENV_DIR/bin/cyberpowerfull --scope scope.json --target HOST --playbook full
 
 Optional model (the reasoning loop; playbooks do not need it):
 

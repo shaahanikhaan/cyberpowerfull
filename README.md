@@ -17,6 +17,7 @@ capability-gated aggression, append-only memory, an offline knowledge base (Expl
 templates, NSE scripts), and no cloud API key, no Docker for the core loop, and no chat surface.
 
 [![version](https://img.shields.io/badge/version-3.3.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-4.0.0-blue.svg)](CHANGELOG.md)
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
@@ -31,6 +32,8 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
 | Tests | 788 tests, 87% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Tests | 831 tests, 87% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Outputs per run | Markdown report, findings JSON, SARIF 2.1.0, `run.json` manifest, trace |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
 
 ### Documentation
@@ -55,8 +58,11 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 
 ## Safety & Scope (read first)
 
-The agent **refuses to run without `scope.json`**. There is no override flag, no "`--force`",
-and no interactive confirmation prompt that a user could click through.
+The agent **refuses to run without an authorized `scope.json`**. There is no override flag and no
+`--force`. One-command mode (`cpf TARGET`) can *write* that file for you, but only after you type
+`yes` at a prompt or pass `--i-am-authorized`: the attestation is recorded verbatim in the scope
+file (`authorization_ref: operator-attested:YYYY-MM-DD`), and a scope that already exists is never
+widened by it -- a target outside a live scope is an error, not a merge.
 
 - `scope.json` must contain `{"authorized": true}` and a non-empty target list. Anything else
   exits with code `3` before a single tool is invoked.
@@ -214,45 +220,76 @@ tests/                      # 682 tests across CLI, tools, playbooks, lab, docs,
 
 ---
 
-## Easy start
-
-Two commands, nothing to configure. `--lab` starts a **real** HTTP service on the loopback
-interface and runs a **real** playbook against it: no model, no scanner binaries, no fixture data.
+## Start here — one command
 
 ```bash
-make setup      # venv + editable install (or: ./scripts/install.sh)
-make lab        # serve 127.0.0.1:8080 and scan it with the network playbook
+git clone https://github.com/shaahanikhaan/cyberpowerfull
+cd cyberpowerfull
+./run.sh example.com
 ```
 
-After that:
+That is the whole quickstart. `./run.sh` creates the virtualenv the first time, installs two
+Python dependencies, and then runs `cpf example.com`, which:
+
+1. reduces your input to a host and checks it is a real host (a URL path or a wildcard is not);
+2. asks you once, in the terminal, to confirm you are authorized to test it — and records that
+   claim in `engagements/example.com.json` (`authorized: true`,
+   `authorization_ref: operator-attested:…`);
+3. picks a plan, tells you what it is about to do, then runs the tools that are actually
+   installed on this machine;
+4. writes the report and a machine-readable manifest, and prints what it found and what to do next.
+
+If the binary for a step is not installed, that step is **skipped and named** in the summary — it
+is never simulated, and nothing is ever invented to fill the gap.
+
+Already installed (`pipx install cyberpowerfull` or `pip install -e .`)? Use `cpf` instead:
 
 ```bash
-make doctor     # what this host can actually run (binaries, wordlists, templates, agents)
-make toolchain  # live inventory, install hints for everything missing
-make tools      # apt-install the scanner set on Debian/Kali (prompts for sudo, review first)
+cpf example.com                  # standard pass
+cpf example.com --profile quick   # surface map only, ~5-10 minutes
+cpf example.com --profile deep    # two-hour budget, wider parallelism
+cpf example.com --plan            # print the plan, send nothing
+cpf example.com --i-am-authorized --authorization-ref SOW-2026-014   # non-interactive
 ```
 
-On your own engagement, write the scope first — the agent refuses to run without one:
+| You want | Run |
+|---|---|
+| to see it work with no target of your own | `./run.sh --lab` — real loopback service, scanned end to end |
+| to know what this host can run | `./run.sh --doctor` |
+| to install the scanner set (Kali/Debian) | `./run.sh --install-tools` |
+| to install the scanners quietly, no sudo surprises | review `Makefile`, then `make tools` |
+| a specific playbook against a real target | `cpf example.com --playbook web` |
+| the model-driven reasoning loop | `ollama serve & ollama pull qwen3:4b`, then `cpf example.com --ai` |
+| to prove a run happened | open `artifacts/report-*.md`, or `cyberpowerfull --replay traces/latest.json` |
+| to wire it into CI | read `artifacts/findings-*.sarif` with any SARIF viewer or GitHub code scanning |
+
+### What one run gives you
+
+```
+artifacts/
+  report-cpf-<id>.md          human report: summary, findings, evidence, trace, methodology
+  findings-cpf-<id>.json      findings as data
+  findings-cpf-<id>.sarif     SARIF 2.1.0 for code scanning / any SARIF viewer
+  run-cpf-<id>.json           manifest: statuses per step, skips, budget, tools used
+traces/latest.json            the full step-by-step trace (replayable)
+engagements/example.com.json  the scope that authorized this run
+```
+
+### Writing the scope by hand instead
+
+Attestation at a prompt is a convenience, not a weaker gate. If you would rather write the file
+(teams, CI, per-engagement scopes), do it explicitly:
 
 ```bash
 cyberpowerfull --init-scope scope.json \
     --engagement acme-q4 --targets app.example.test,10.0.0.0/24 \
     --authorize --authorization-ref SOW-2026-014
-cyberpowerfull --scope scope.json --target app.example.test --playbook recon
+cyberpowerfull --scope scope.json --target app.example.test --playbook full
 ```
 
-`--init-scope` writes a validated file and refuses to mark it authorized without an
-`--authorization-ref`; without `--authorize` it writes `"authorized": false` so the file cannot be
-run by accident. `cpf` is installed as a short alias for `cyberpowerfull`.
-
-| You want | Run |
-|---|---|
-| a first run in 30 seconds | `make lab` |
-| to know what this host can do | `make doctor` |
-| to install the scanners | `make tools` |
-| a specific playbook against a real target | `cyberpowerfull --scope scope.json --target HOST --playbook web` |
-| the model-driven loop | `ollama serve & ollama pull qwen3:4b` then `cyberpowerfull --scope scope.json --target HOST` |
-| to prove a run happened | open `artifacts/report-*.md` or `--replay traces/latest.json` |
+`--init-scope` refuses to mark a scope authorized without an `--authorization-ref`, and without
+`--authorize` it writes `"authorized": false` so the file cannot be run by accident. Full details,
+including every flag and its exit code: [docs/GUIDE.md](docs/GUIDE.md).
 
 ## Quick Start
 
@@ -638,6 +675,10 @@ pip install -e ".[dev]"
 ruff check .
 black --check .
 pytest                      # 788 tests, coverage gate (70%) in pyproject.toml addopts
+make setup                  # venv + editable install + readiness check
+make lab                    # real loopback lab: scan, no model, no binaries
+make test                   # 831 tests, coverage gate (70%) in pyproject.toml addopts
+make lint                   # ruff + black, non-mutating
 pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```
 

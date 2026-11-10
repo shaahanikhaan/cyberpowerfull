@@ -31,6 +31,27 @@ CI pipelines cannot consume Markdown. Strix ships `findings.sarif` and `run.json
   *Acceptance:* each format covered by a CLI test.
 
 ### 3.5.0 — Parser conformance
+| 3.3.0 | Repository maturity | agent/maintainer docs, issue/PR templates, release + CodeQL workflows, doc-link tests |
+| 4.0.0 | One command | `cpf TARGET` / `./run.sh TARGET`: derived scope with recorded attestation, profiles, plain-language output, SARIF + run manifest |
+
+## Next
+
+### 4.1.0 — Machine-readable results, finished
+
+4.0.0 writes SARIF and a run manifest; the consumption side is still missing.
+
+- **Schema validation**: run the emitted SARIF through the official 2.1.0 schema in CI, and
+  assert the `physicalLocation` URIs are valid for the endpoint forms we emit.
+  *Acceptance:* a CI job that fails on schema drift.
+- **Upload job**: a documented, opt-in GitHub Actions snippet that uploads
+  `artifacts/findings-*.sarif` to code scanning (never enabled by default — it publishes findings).
+  *Acceptance:* the snippet is exercised in a scratch workflow, not just documented.
+- **`--format` flag** (`md`, `json`, `sarif`, `all`) instead of always writing everything.
+  *Acceptance:* each format covered by a CLI test.
+- **HTML report** as a self-contained single file (no CDN, no JS requirement), for people who do
+  not read Markdown. *Acceptance:* rendering test asserts no external references.
+
+### 4.2.0 — Parser conformance
 
 The weakest honest claim today: parsers are unit-tested against fixtures, not real binary output.
 
@@ -43,6 +64,7 @@ The weakest honest claim today: parsers are unit-tested against fixtures, not re
   returning zero findings when a known signature disappears.
 
 ### 3.6.0 — Resumable and observable runs
+### 4.3.0 — Resumable and observable runs
 
 - **`--resume <run_id>`**: continue a playbook from recorded steps, skipping completed groups.
   Requires `trace.steps` to be sufficient (it is) and memory to be append-only (it is).
@@ -68,6 +90,7 @@ The corpus is only as good as what the operator imported. Make that a first-clas
   without a declared signal.
 
 ### 4.0.0 — Distribution
+### 4.4.0 — Distribution
 
 - **Container image** (`ghcr.io/...`) built from a pinned Kali base with the scanner set, running
   the same CLI and the same scope checks. Not a hosted service.
@@ -76,6 +99,23 @@ The corpus is only as good as what the operator imported. Make that a first-clas
 - **`pipx` / Homebrew tap** instructions verified in CI.
 - **Plugin boundary** for private tool wrappers (entry points under `cyberpowerfull.tools`) so
   forks do not have to patch `registry.py`.
+
+### 4.5.0 — Guided runs that stay honest
+
+One-command mode made the first run easy; the second run is where operators still guess.
+
+- **`--explain` after a run**: for each skipped step, the exact package that would provide the
+  binary on this distribution, and the coverage it would add (steps unlocked). *Acceptance:* the
+  hint comes from the toolchain inventory, not a hand-written table, and a test pins one case.
+- **`--compare`**: diff two runs of the same target (new ports, new findings, resolved findings)
+  using the run manifests. *Acceptance:* a test with two synthetic manifests asserts added,
+  removed and unchanged sets.
+- **Attestation hygiene**: `--scope-status` lists every auto-created scope with its attestation
+  date, expiry (if any) and target count, so stale engagements are visible instead of forgotten.
+  *Acceptance:* a test that an expired auto-scope reports itself as expired before running.
+- **Wizard for non-default choices** (`--wizard`): only for the decisions one command cannot
+  guess — credentials, passive sources, exclusions — and it must show the resulting scope before
+  writing it. *Acceptance:* the wizard path is exercised non-interactively via a recorded stdin.
 
 ### Research backlog (not scheduled)
 
@@ -89,6 +129,13 @@ The corpus is only as good as what the operator imported. Make that a first-clas
 - **Model-agnostic structured decoding**: constrained JSON decoding for small local models, so a
   4B model can plan reliably without prompt gymnastics.
 - **Windows/AD playbook** with the same guardrails (currently AD coverage is a skill pack only).
+- **Model-agnostic structured decoding**: constrained JSON decoding for small local models, so a
+  4B model can plan reliably without prompt gymnastics.
+- **Windows/AD playbook** with the same guardrails (currently AD coverage is a skill pack only).
+- **Template ↔ CVE bridging**: prefer a nuclei template whose id matches a correlated CVE instead of
+  running the whole tag set.
+- **Feed upkeep**: `--feed-cache DIR` + `--feed-refresh` to import a directory of already
+  downloaded feeds idempotently, and a CPE-coverage report for the corpus.
 
 ## Explicitly out of scope
 

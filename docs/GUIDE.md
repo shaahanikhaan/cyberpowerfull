@@ -10,6 +10,18 @@ make setup && make lab
 and read `artifacts/report-*.md`. That lab is a **real** loopback HTTP service scanned by a
 **real** playbook — no model, no scanner binaries, no demo data.
 
+need it. If you only have two minutes:
+
+```bash
+git clone https://github.com/shaahanikhaan/cyberpowerfull && cd cyberpowerfull
+./run.sh example.com
+```
+
+That installs, attests, scans, and writes the report. No scope file to write, no playbook to pick,
+no model to start. If you have no target of your own yet, run `./run.sh --lab` instead: a **real**
+loopback HTTP service scanned by a **real** playbook — no model, no scanner binaries, no demo data.
+
+- [0. One command: `cpf TARGET`](#0-one-command-cpf-target)
 - [1. Install](#1-install)
 - [2. First run: the lab](#2-first-run-the-lab)
 - [3. Authorize a real engagement](#3-authorize-a-real-engagement)
@@ -22,6 +34,80 @@ and read `artifacts/report-*.md`. That lab is a **real** loopback HTTP service s
 - [10. Troubleshooting](#10-troubleshooting)
 - [11. Recipes](#11-recipes)
 - [12. FAQ](#12-faq)
+
+---
+
+## 0. One command: `cpf TARGET`
+
+The shortest path from clone to report. Nothing below this section is required to get a result.
+
+```bash
+./run.sh example.com                      # bootstrap the venv once, then scan + report
+cpf example.com                           # already installed? this is the same run
+cpf https://app.example.com/login         # URLs are reduced to the host automatically
+cpf example.com --profile quick           # ~5-10 minutes: surface map only
+cpf example.com --profile deep            # two-hour budget, wider parallelism
+cpf example.com --plan                    # print the plan, send nothing at all
+```
+
+**What happens, in order**
+
+1. The target is reduced to a host (`https://user@app.example.com:8443/x` → `app.example.com`).
+   A path, a wildcard, or whitespace is rejected: the scope engine authorizes hosts.
+2. If no scope file covers that host, you are asked once, in the terminal, to confirm you are
+   authorized. The confirmation must be typed (`yes`); a stray Enter is not an attestation.
+   The scope is then written to `engagements/<host>.json` with
+   `"authorized": true` and `"authorization_ref": "operator-attested:YYYY-MM-DD"`.
+3. The plan is printed before the first packet: playbook, step counts per phase, parallelism,
+   time budget, and the capabilities that were granted.
+4. Installed tools run. Missing binaries are skipped and named. Nothing is simulated.
+5. The report, findings JSON, SARIF, and run manifest are written, and the summary ends with
+   what was found and what to do next.
+
+**Profiles**
+
+| Profile | Playbook | Budget | Parallel | Use when |
+|---|---|---|---|---|
+| `quick` | `recon` | 10 min | 2 | you want a fast surface map or you are on a slow link |
+| `standard` (default) | `full` | 30 min | 3 | normal first assessment of a host |
+| `deep` | `full` | 2 h | 4 | you have time and want the widest pass |
+
+Change the time budget without changing the profile with `--max-seconds N`; override the plan
+entirely with `--playbook NAME` (see [§5](#5-playbooks-in-practice)).
+
+**The authorization question, honestly**
+
+The tool cannot check whether you are allowed to test a target; no tool can. What it does is
+refuse to run without an authorized scope file, and make writing that file an explicit,
+recorded act:
+
+```bash
+cpf example.com --i-am-authorized --authorization-ref SOW-2026-014   # CI, cron, scripts
+cpf example.com --i-am-authorized                                     # records "operator-attested:<date>"
+cpf example.com --scope my-engagement.json                            # use a scope you wrote
+```
+
+- An existing scope file is **never widened** by one-command mode. If the host is not inside it,
+  the run stops with exit code `3` and tells you to edit the file yourself. Adding a target to a
+  live engagement is an operator decision.
+- `--polite` withholds the `aggressive` capability (no high-rate scans).
+- `--with-credentials` adds `credential_testing`; it is off unless you ask for it.
+- `--ai` swaps the deterministic playbook for the local model loop (needs Ollama/llama.cpp).
+
+**What you get**
+
+| File | What it is for |
+|---|---|
+| `artifacts/report-<id>.md` | human report: summary, findings with evidence, trace, methodology |
+| `artifacts/findings-<id>.json` | the same findings as data |
+| `artifacts/findings-<id>.sarif` | SARIF 2.1.0 — code scanning, IDE plugins, CI dashboards |
+| `artifacts/run-<id>.json` | manifest: per-step status, skips, budget, tools used |
+| `traces/latest.json` | replayable trace (`cyberpowerfull --replay traces/latest.json`) |
+| `engagements/<host>.json` | the scope that authorized this run |
+
+Doing something else? `./run.sh --doctor` shows what this host can run, `./run.sh --install-tools`
+installs the scanner set on Kali/Debian, and `./run.sh --lab` proves the whole pipeline against a
+service on `127.0.0.1`.
 
 ---
 
@@ -186,6 +272,10 @@ cyberpowerfull --render-prompt --scope scope.json --target app.example.test | le
 `wafw00f`, `nmap`, `masscan`, `naabu`, `whatweb`, `nikto`, `ffuf`, `gobuster`, `feroxbuster`,
 `arjun`, `testssl`, `wpscan`, `nuclei`, `sqlmap`, `dalfox`, `payload`, `cve_correlate`,
 `searchsploit`, `hydra`, `strix`, `pentagi`, `sn1per`. List them with their install state:
+26 typed tools: `tcp_probe`, `subfinder`, `amass`, `dnsrecon`, `httpx`, `katana`, `wafw00f`,
+`nmap`, `masscan`, `naabu`, `whatweb`, `nikto`, `ffuf`, `gobuster`, `feroxbuster`, `arjun`,
+`testssl`, `wpscan`, `nuclei`, `sqlmap`, `dalfox`, `searchsploit`, `hydra`, `strix`, `pentagi`,
+`sn1per`. List them with their install state:
 
 ```bash
 cyberpowerfull --list-tools
@@ -318,6 +408,7 @@ cyberpowerfull --correlate 'openssh=9.6p1' --target 127.0.0.1 --min-cvss 7
 cyberpowerfull --payload xss --target 'http://127.0.0.1:8080/search'
 
 # F. Give the model the loop, bounded
+# E. Give the model the loop, bounded
 cyberpowerfull --scope scope.json --target app.acme.test --llm ollama:qwen3:4b \
   --max-iterations 8 --max-seconds 600
 ```

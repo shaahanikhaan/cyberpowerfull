@@ -55,6 +55,10 @@ make test        # 788 tests, 70% coverage gate (currently ~87%)
 ```
 
 Ten invariants must survive any change: no-scope-no-run, per-call scope re-validation, capability
+make test        # 682 tests, 70% coverage gate (currently ~88%)
+```
+
+Nine invariants must survive any change: no-scope-no-run, per-call scope re-validation, capability
 gate before argv, loopback-only inference, append-only memory, no shell, proof-only exploitation,
 honest reporting of skips/failures, and the exit-code contract. They are spelled out in
 [docs/HANDOFF.md §4](docs/HANDOFF.md#4-invariants-do-not-break-these).
