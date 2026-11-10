@@ -1,0 +1,21 @@
+{# Skill pack: graphql #}
+## Skill: GraphQL
+applies_when: Use when a /graphql endpoint answers introspection or query errors.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - introspection enabled in production
+  - field suggestions returned in error messages
+  - mutations exposing privileged fields
+probe_order:
+  1. Confirm the endpoint with a benign introspection query
+  2. Enumerate types and mutations from the schema response
+  3. Test authorisation on a single object, not on the whole schema
+validation_criteria:
+  - introspection returns schema detail that should be hidden, or
+  - a mutation accepts a field the caller must not control
+evidence_required:
+  - the query, the response fragment, and the affected type/field
+constraints:
+  - no alias-based amplification or nested-query flooding

@@ -1,0 +1,22 @@
+{# Skill pack: network_services #}
+## Skill: Network Service Assessment
+applies_when: Use when TCP/UDP services are reachable and the engagement permits scanning.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - open ports with version banners
+  - administrative services exposed beyond the intended network segment
+probe_order:
+  1. Sweep a bounded port set with the native connector, then nmap service detection
+  2. Identify protocol and version from the banner, never from the port number alone
+  3. Check anonymous or default access only where the protocol defines it
+  4. Correlate versions with the local Exploit-DB mirror via searchsploit
+validation_criteria:
+  - the service is reachable, identified, and its version is evidenced
+  - authentication behaviour is observed without modifying data
+evidence_required:
+  - port/protocol, banner text, and the request/response that proves reachability
+constraints:
+  - no brute force unless credential_testing is granted
+  - no denial of service, no unbounded concurrency, no exploit execution

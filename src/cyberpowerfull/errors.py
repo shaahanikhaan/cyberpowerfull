@@ -52,6 +52,12 @@ class PolicyViolation(CyberpowerfullError):
     exit_code = 7
 
 
+class PlaybookNotFound(CyberpowerfullError):
+    """The requested playbook name is not defined."""
+
+    exit_code = 8
+
+
 class BudgetExhausted(CyberpowerfullError):
     """The iteration, token, or wall-clock budget is exhausted."""
 
@@ -68,6 +74,7 @@ __all__ = [
     "InvalidToolArguments",
     "LLMError",
     "MemoryError_",
+    "PlaybookNotFound",
     "PolicyViolation",
     "ScopeError",
     "ScopeViolation",

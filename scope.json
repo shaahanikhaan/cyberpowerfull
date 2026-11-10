@@ -6,18 +6,23 @@
     "127.0.0.1",
     "localhost"
   ],
-  "domains": [],
+  "domains": [
+    "localhost"
+  ],
   "exclude": [],
   "allowed_phases": [
     "recon",
     "scanning",
     "validation"
   ],
+  "capabilities": [
+    "aggressive"
+  ],
   "max_rps": 5,
-  "expires": null,
-  "contact": "lab-owner@localhost",
-  "notes": "Default scope shipped with the repository: the loopback lab instance only. Replace with your engagement scope and written authorization reference before testing anything else.",
   "allow_passive_sources": false,
   "allowed_wordlists": [],
-  "allowed_nuclei_templates": []
+  "allowed_nuclei_templates": [],
+  "expires": null,
+  "contact": "lab-owner@localhost",
+  "notes": "Default scope shipped with the repository: the loopback lab instance only. 'aggressive' is granted because 127.0.0.1/localhost is a lab you own; external_agents and credential_testing are deliberately not granted. Replace every value with your engagement scope, authorization reference, and the capabilities the engagement actually authorises before testing anything else."
 }

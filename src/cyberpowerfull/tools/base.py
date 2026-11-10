@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.errors import InvalidToolArguments
-from cyberpowerfull.models import Finding, Phase, Severity
+from cyberpowerfull.models import Capability, Finding, Phase, Severity
 from cyberpowerfull.scope import normalize_host
 
 
@@ -83,6 +83,21 @@ class HostInput(ToolInput):
             return normalize_host(value)
         except Exception as exc:  # ScopeError -> validation error
             raise ValueError(str(exc)) from exc
+
+
+class DomainInput(HostInput):
+    """Argument model for tools that require a DNS name, never a raw IP."""
+
+    @field_validator("target")
+    @classmethod
+    def _reject_ip(cls, value: str) -> str:
+        import ipaddress
+
+        try:
+            ipaddress.ip_address(value)
+        except ValueError:
+            return value
+        raise ValueError(f"{value!r} is an IP address; this tool requires a DNS name")
 
 
 class UrlInput(ToolInput):
@@ -162,10 +177,28 @@ class BaseTool(ABC):
     description: ClassVar[str]
     input_model: ClassVar[type[ToolInput]]
     binary: ClassVar[str | None] = None
+    #: Fallback executable names (e.g. Kali ships ProjectDiscovery httpx as
+    #: ``httpx-toolkit`` to avoid clashing with the Python HTTP client).
+    binary_alternatives: ClassVar[tuple[str, ...]] = ()
+    #: Scope capability required before this tool may run. ``None`` = always.
+    required_capability: ClassVar[Capability | None] = None
+    #: True for wrappers that drive another autonomous system (Strix, PentAGI,
+    #: Sn1per). They inherit the engagement scope but need ``external_agents``.
+    external: ClassVar[bool] = False
     timeout_s: ClassVar[int] = 300
     success_codes: ClassVar[tuple[int, ...]] = (0,)
     writes_output_file: ClassVar[bool] = False
     destructive: ClassVar[bool] = False
+
+    # -- binary discovery --------------------------------------------------
+    def resolve_binary(self) -> str | None:
+        """Return the first available executable name for this tool."""
+        if self.binary is None:
+            return None
+        for candidate in (self.binary, *self.binary_alternatives):
+            if candidate and shutil.which(candidate):
+                return candidate
+        return None
 
     # -- argument handling -------------------------------------------------
     def validate(self, raw_args: dict[str, Any]) -> ToolInput:
@@ -208,11 +241,10 @@ class BaseTool(ABC):
     def _execute(self, args: ToolInput, argv: list[str], policy: ToolPolicy) -> _Exec:
         if self.binary is None:  # pragma: no cover - native tools override this
             return _Exec(status=ToolStatus.ERROR, error="native tool did not implement _execute")
-        if shutil.which(self.binary) is None:
-            return _Exec(
-                status=ToolStatus.MISSING,
-                error=f"binary not installed: {self.binary}",
-            )
+        executable = self.resolve_binary()
+        if executable is None:
+            names = ", ".join((self.binary, *self.binary_alternatives))
+            return _Exec(status=ToolStatus.MISSING, error=f"binary not installed: {names}")
         try:
             # Spool process output to disk, not unbounded RAM, and read only a
             # limited excerpt after completion. The temporary files are private.
@@ -336,6 +368,11 @@ class BaseTool(ABC):
         try:
             try:
                 argv = self.apply_policy(args, self.build_argv(args, out_file), policy)
+                # Honour alternate executable names without every wrapper
+                # hard-coding them (argv[0] is the only element rewritten).
+                resolved = self.resolve_binary()
+                if resolved and argv and argv[0] == self.binary:
+                    argv[0] = resolved
             except InvalidToolArguments as exc:
                 return ToolResult(tool=self.name, status=ToolStatus.ERROR, error=str(exc))
             if dry_run:
@@ -411,13 +448,17 @@ class BaseTool(ABC):
     # -- catalogue ---------------------------------------------------------
     def describe(self) -> dict[str, Any]:
         """Machine-readable description injected into the system prompt."""
+        resolved = self.resolve_binary()
         return {
             "name": self.name,
             "phase": self.phase.value,
             "skill": self.skill,
             "binary": self.binary or "native",
-            "installed": True if self.binary is None else shutil.which(self.binary) is not None,
+            "resolved_binary": resolved,
+            "installed": True if self.binary is None else resolved is not None,
             "destructive": self.destructive,
+            "external": self.external,
+            "capability": self.required_capability.value if self.required_capability else None,
             "description": self.description,
             "input_schema": self.schema(),
         }
@@ -468,6 +509,7 @@ def extract_identifiers(text: str) -> tuple[str | None, str | None]:
 
 __all__ = [
     "BaseTool",
+    "DomainInput",
     "HostInput",
     "ToolInput",
     "ToolResult",

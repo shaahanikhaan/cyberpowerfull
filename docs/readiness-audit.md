@@ -5,6 +5,14 @@ production-certified release. The repository metadata is 2.0.0; no v1.5 requirem
 were present to verify. The work focuses on making the existing local workflow reproducible and
 surfacing failures rather than adding unverified integrations.
 
+
+> **Status note (v3.0.0).** This audit was written against the 2.0.0 checkout. Everything it
+> records still applies; 3.0 adds tools, playbooks, and external-agent adapters on top of the same
+> guardrails. Two points moved since: `ffuf`/`nuclei` also accept files from the local wordlist and
+> nuclei-template libraries (not arbitrary host paths), and the playbook path reports steps it
+> could not run in the trace (`skipped`) and in the report. Re-verify before relying on any claim
+> here for a specific engagement.
+
 ## Research and changes
 
 | Area | What the upstream material and audit showed | What changed here |

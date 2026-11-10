@@ -1,0 +1,20 @@
+{# Skill pack: cloud_metadata #}
+## Skill: Cloud Metadata Exposure
+applies_when: Use when the target runs in a cloud account inside the engagement scope.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - URL-fetching or proxy features that could reach link-local addresses
+  - verbose errors that include instance role or region names
+probe_order:
+  1. Determine whether any client-controlled request reaches internal addresses
+  2. Use only an in-scope collaborator or a documented, authorized metadata probe
+  3. Record whether the response is blocked, filtered, or answered
+validation_criteria:
+  - the target returns metadata content from an address it must not reach
+evidence_required:
+  - the request, the response excerpt, and the parameter that enabled it
+constraints:
+  - metadata endpoints are excluded by default scope; require explicit inclusion
+  - never retrieve credentials or tokens

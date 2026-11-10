@@ -37,19 +37,23 @@ class TestHelpAndListing:
     def test_version(self, capsys) -> None:
         with pytest.raises(SystemExit):
             main(["--version"])
-        assert "cyberpowerfull 2.0.0" in capsys.readouterr().out
+        assert "cyberpowerfull 3.0.0" in capsys.readouterr().out
 
     def test_list_tools(self, capsys) -> None:
         assert main(["--list-tools"]) == 0
         out = capsys.readouterr().out
         assert "tcp_probe" in out
-        assert "9 typed tools registered" in out
+        from cyberpowerfull.tools.registry import tool_names
+
+        assert f"{len(tool_names())} typed tools registered" in out
 
     def test_list_skills(self, capsys) -> None:
         assert main(["--list-skills"]) == 0
         out = capsys.readouterr().out
         assert "sql_injection" in out
-        assert "16 skill packs registered" in out
+        from cyberpowerfull.skills import skill_names
+
+        assert f"{len(skill_names())} skill packs registered" in out
 
 
 class TestScopeGating:
@@ -359,3 +363,186 @@ class TestEndToEndRun:
         assert code == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["stop_reason"] == "agent_terminated"
+
+
+class TestToolchainAndPlaybooks:
+    """New 3.0 commands: live inventory, playbooks, agents, local knowledge."""
+
+    def test_list_playbooks(self, capsys) -> None:
+        assert main(["--list-playbooks"]) == 0
+        out = capsys.readouterr().out
+        assert "playbook" in out
+        assert "network" in out and "stealth" in out
+        assert "playbooks registered" in out
+
+    def test_agents_listing(self, capsys) -> None:
+        assert main(["--agents"]) == 0
+        out = capsys.readouterr().out
+        assert "pentagi" in out and "strix" in out and "sn1per" in out
+        assert "external_agents" in out
+
+    def test_toolchain_json_is_machine_readable(self, capsys) -> None:
+        assert main(["--toolchain", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert "binaries" in payload
+        assert "operating_system" in payload
+        assert payload["installed_count"] + payload["missing_count"] == len(payload["binaries"])
+
+    def test_toolchain_table(self, capsys) -> None:
+        assert main(["--toolchain"]) == 0
+        out = capsys.readouterr().out
+        assert "host toolchain (probed live)" in out
+        assert "family" in out
+
+    def test_wordlists_json(self, capsys, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cyberpowerfull.cli.wordlist_summary",
+            lambda kind: [
+                {
+                    "path": "/x/common.txt",
+                    "kind": "discovery",
+                    "size_bytes": 1024,
+                    "compressed": False,
+                }
+            ],
+        )
+        assert main(["--wordlists", "--json"]) == 0
+        assert json.loads(capsys.readouterr().out)[0]["path"] == "/x/common.txt"
+
+    def test_missing_templates_exit_6(self, capsys, monkeypatch) -> None:
+        from cyberpowerfull.knowledge import KnowledgeUnavailable
+
+        def boom(*args, **kwargs):
+            raise KnowledgeUnavailable("nuclei-templates is not installed")
+
+        monkeypatch.setattr("cyberpowerfull.cli.nuclei_template_paths", boom)
+        assert main(["--templates"]) == 6
+        assert "nuclei-templates" in capsys.readouterr().err
+
+    def test_search_exploits(self, capsys, monkeypatch) -> None:
+        from cyberpowerfull.knowledge import ExploitRecord
+
+        monkeypatch.setattr(
+            "cyberpowerfull.cli.search_exploit_db",
+            lambda query: [
+                ExploitRecord(
+                    "50383", "Apache RCE", "/x/50383.py", "2021-10-05", "remote", "multiple"
+                )
+            ],
+        )
+        assert main(["--search-exploits", "apache"]) == 0
+        out = capsys.readouterr().out
+        assert "EDB-50383" in out and "Apache RCE" in out
+
+    def test_nse_listing(self, capsys, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cyberpowerfull.cli.nmap_script_paths",
+            lambda pattern, limit=200: ["http-title.nse"],
+        )
+        assert main(["--nse", "http"]) == 0
+        assert "http-title.nse" in capsys.readouterr().out
+
+    def test_playbook_requires_target(self, workdir: Path) -> None:
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--scope", str(workdir / "scope.json"), "--playbook", "network"])
+        assert excinfo.value.code == 2
+
+    def test_unknown_playbook_exit_8(self, workdir: Path, capsys) -> None:
+        assert (
+            main(
+                [
+                    "--scope",
+                    str(workdir / "scope.json"),
+                    "--target",
+                    "127.0.0.1",
+                    "--playbook",
+                    "nuke-all",
+                ]
+            )
+            == 8
+        )
+        assert "unknown playbook" in capsys.readouterr().err
+
+    def test_playbook_dry_run_end_to_end(self, workdir: Path, capsys) -> None:
+        code = main(
+            [
+                "--scope",
+                str(workdir / "scope.json"),
+                "--target",
+                "127.0.0.1",
+                "--playbook",
+                "network",
+                "--dry-run",
+                "--out",
+                str(workdir / "artifacts"),
+                "--trace",
+                str(workdir / "trace.json"),
+                "--memory",
+                str(workdir / "memory.sqlite3"),
+                "--quiet",
+            ]
+        )
+        assert code == 0
+        trace = json.loads((workdir / "trace.json").read_text(encoding="utf-8"))
+        assert trace["backend"] == "playbook:network"
+        assert trace["steps"], "dry-run still records the planned calls"
+        assert list((workdir / "artifacts").glob("report-*.md"))
+
+    def test_playbook_refuses_out_of_scope_target(self, workdir: Path) -> None:
+        code = main(
+            [
+                "--scope",
+                str(workdir / "scope.json"),
+                "--target",
+                "8.8.8.8",
+                "--playbook",
+                "recon",
+            ]
+        )
+        assert code == 4
+
+    def test_doctor_reports_readiness(self, workdir: Path, capsys, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cyberpowerfull.brain.llm.build_client",
+            lambda spec: type(
+                "C",
+                (),
+                {"health": lambda self: {"ok": True, "backend": "ollama", "endpoint": "local"}},
+            )(),
+        )
+        assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 0
+        out = capsys.readouterr().out
+        assert "readiness check" in out
+        assert "capabilities:" in out
+        assert "agent/strix" in out
+
+    def test_doctor_rejects_remote_endpoint(self, workdir: Path, monkeypatch, capsys) -> None:
+        monkeypatch.setenv("CYBERPOWERFULL_LLM_ENDPOINT", "http://api.example.com:11434")
+        code = main(["--doctor", "--scope", str(workdir / "scope.json")])
+        assert code == 5
+        assert "non-local inference endpoint" in capsys.readouterr().err
+
+    def test_endpoint_as_model_is_reported(self, workdir: Path, capsys) -> None:
+        code = main(
+            [
+                "--doctor",
+                "--scope",
+                str(workdir / "scope.json"),
+                "--llm",
+                "ollama:http://127.0.0.1:11434",
+            ]
+        )
+        assert code == 5
+        assert "is an endpoint, not a model id" in capsys.readouterr().err
+
+    def test_doctor_reports_model_failure(self, workdir: Path, capsys, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cyberpowerfull.brain.llm.build_client",
+            lambda spec: type(
+                "C",
+                (),
+                {"health": lambda self: {"ok": False, "backend": "ollama", "error": "down"}},
+            )(),
+        )
+        assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 5
+        assert "down" in capsys.readouterr().out

@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from cyberpowerfull.errors import ScopeError
-from cyberpowerfull.models import Phase
+from cyberpowerfull.models import Capability, Phase
 
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -145,6 +145,7 @@ class Scope(BaseModel):
     allowed_phases: list[Phase] = Field(
         default_factory=lambda: [Phase.RECON, Phase.SCANNING, Phase.VALIDATION]
     )
+    capabilities: list[Capability] = Field(default_factory=list)
     max_rps: float = Field(default=5.0, gt=0, le=100, allow_inf_nan=False)
     allow_passive_sources: StrictBool = False
     allowed_wordlists: list[str] = Field(default_factory=list, max_length=50)
@@ -260,6 +261,19 @@ class Scope(BaseModel):
     def phase_allowed(self, phase: Phase) -> bool:
         return phase in self.allowed_phases
 
+    def allows(self, capability: Capability | str | None) -> bool:
+        """Return ``True`` when the engagement grants ``capability``.
+
+        ``None`` means "no special permission required" and is always allowed.
+        """
+        if capability is None:
+            return True
+        try:
+            wanted = capability if isinstance(capability, Capability) else Capability(capability)
+        except ValueError:
+            return False
+        return wanted in self.capabilities
+
     def fingerprint(self) -> str:
         """Stable hash of the scope, embedded in every trace for audit."""
         payload = self.model_dump(mode="json", exclude_none=True)
@@ -275,6 +289,7 @@ class Scope(BaseModel):
             f"in_scope_domains: {', '.join(self.domains) or 'none'}",
             f"excluded: {', '.join(self.exclude) or 'none'}",
             f"allowed_phases: {', '.join(p.value for p in self.allowed_phases)}",
+            f"granted_capabilities: {', '.join(c.value for c in self.capabilities) or 'none'}",
             f"max_requests_per_second: {self.max_rps}",
             f"allow_passive_sources: {self.allow_passive_sources}",
             f"allowed_wordlists: {', '.join(self.allowed_wordlists) or 'none'}",

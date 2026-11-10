@@ -9,7 +9,42 @@ contacts with the asset owner before running it. The bundled scope is for a loop
 The CLI rejects missing/unauthorized/expired scope, checks primary delegated targets and phases,
 restricts model endpoints to loopback, and prevents model-server redirects and proxy use. Passive
 third-party sources require an explicit scope opt-in; model-selected wordlists and Nuclei templates
-must be operator-allowlisted files. Those controls reduce mistakes; **they are not a sandbox**.
+must be operator-allowlisted files (files from the local Kali wordlist and nuclei-template
+directories are accepted because they are the operator's own libraries, not arbitrary host files).
+Those controls reduce mistakes; **they are not a sandbox**.
+
+## Capability gate
+
+Aggressive or credential-touching tools are blocked before a command line is even built unless
+`scope.json` grants the matching capability:
+
+| Capability | Unlocks | Blocked message |
+|---|---|---|
+| `aggressive` | `masscan`, `naabu` | "requires the 'aggressive' capability" |
+| `credential_testing` | `hydra` | "requires the 'credential_testing' capability" |
+| `external_agents` | `strix`, `pentagi`, `sn1per` | "requires the 'external_agents' capability" |
+| `destructive` | reserved; no shipped tool requires it | - |
+
+The granted list is part of the SHA-256 scope fingerprint recorded in every trace, so a run can be
+attributed to a specific set of permissions. `hydra` stops at the first valid credential, caps
+concurrency at 8, rejects oversized candidate lists, and redacts the recovered password in
+evidence and reports.
+
+## External agents and third-party processing
+
+`strix`, `pentagi`, and `sn1per` are third-party autonomous systems. With `external_agents`
+granted they run their own tooling and, for Strix and PentAGI, their own model provider - which
+means engagement data (targets, responses, findings) leaves this machine and is processed by that
+provider.
+
+- They never run without the capability, and the target is re-checked against `scope.json` first.
+- The delegated instruction always states the in-scope target and the engagement constraints.
+- Cost and runtime are bounded (`max_budget_usd`, `max_turns`, `max_wait_s`).
+- Their output is a hypothesis: it is only promoted to a finding when the adapter can attach
+  concrete evidence, and its severity is re-derived locally.
+
+If the agreement forbids third-party processing, do not grant `external_agents`. The reasoning
+loop and every playbook work without it.
 
 Third-party scanner binaries, DNS, redirects, templates, subprocesses, local configuration, and
 model/target output are not fully controlled by this application. Scanner tests may change data or

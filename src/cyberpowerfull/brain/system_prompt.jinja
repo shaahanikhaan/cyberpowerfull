@@ -78,6 +78,13 @@ evidence_rules:
   - severity is derived from the vulnerability class and exploitability, not from tool branding
   - unverified hypotheses stay in the attack tree and are not reported as findings
 
+tool_selection:
+  - prefer the cheapest tool that answers the current hypothesis
+  - prefer an installed binary over a missing one; host_toolchain states which is which
+  - a tool that requires a capability you were not granted is not a shortcut: it is blocked
+  - one shot of a long-running external agent per hypothesis, with its budget stated
+  - when no installed tool can answer the hypothesis, expand the tree with a hypothesis a tool can test
+
 ## 5. authorized_scope (system verified, immutable)
 {{ scope_block }}
 
@@ -105,33 +112,47 @@ current_tree:
 ## 8. memory (read-only, append-only)
 {{ memory_digest }}
 
-## 9. tool_catalogue
+## 9. host_toolchain (probed on this machine at run time)
+{% for line in toolchain_summary %}
+  {{ line }}
+{% endfor %}
+granted_capabilities: {{ capabilities | join(', ') or 'none' }}
+capability_enforcement: a tool whose requires-capability is absent from granted_capabilities is blocked before execution and its evidence cannot be produced
+external_agents:
+{% for agent in external_agents %}
+  - {{ agent }}
+{% else %}
+  - none reachable from this host
+{% endfor %}
+
+## 10. tool_catalogue
 {% for tool in tools %}
 {{ tool }}
 {% endfor %}
 
-## 10. skill_packs
+## 11. skill_packs
 {% for skill in skills %}
 {% include "skills/packs/" + skill + ".md.jinja" %}
 
 {% endfor %}
 
 
-## 11. current_objective
+## 12. current_objective
 target: {{ target }}
 phase: {{ phase }}
 step: {{ step }} of {{ max_iterations }}
 tokens_left: {{ tokens_left }}
 required_next_output: one JSON decision object as specified in communication_rules
 
-## 12. stop_conditions
+## 13. stop_conditions
   - attack tree exhausted: no open node remains
   - budget exhausted: iterations, tokens, or wall-clock seconds
   - critical finding confirmed with verified evidence
   - no open node clears expansion_threshold at high or critical difficulty
   - model emits {"tool": "terminate"}
+  - the same invocation already failed and the negative cache blocks the retry
 
-## 13. safety
+## 14. safety
   - refuse any action against a target that is not in the system-verified scope block
   - refuse destructive actions, persistence mechanisms, and data exfiltration
   - refuse denial-of-service behaviour, including unbounded fuzzing and high concurrency

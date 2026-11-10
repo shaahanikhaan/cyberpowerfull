@@ -128,14 +128,14 @@ def render_markdown(trace: Trace) -> str:
     if trace.steps:
         lines.append(
             _table(
-                ["Step", "Action", "Tool", "Status", "Difficulty", "Findings", "Reason"],
+                ["Step", "Action", "Tool", "Node", "Status", "Findings", "Reason"],
                 [
                     [
                         str(step.index),
                         step.action,
                         step.tool or "-",
+                        step.node or "-",
                         (step.result or {}).get("status", (step.error and "error") or "-"),
-                        str(step.tda.get("level", "-")),
                         str(len(step.finding_ids)),
                         (step.reason or step.error or "")[:80],
                     ]
@@ -146,19 +146,29 @@ def render_markdown(trace: Trace) -> str:
     else:
         lines.append("No steps were executed.")
 
+    if trace.skipped:
+        lines.extend(["", "## Skipped steps", ""])
+        lines.extend(f"- `{entry}`" for entry in trace.skipped)
+
     if trace.error:
         lines.extend(["", "## Run error", "", _inline(trace.error)])
 
+    if trace.backend.startswith("playbook:"):
+        inference_note = (
+            "This run executed a deterministic playbook: no model was invoked, every step "
+            "was selected by the playbook definition and gated by the same worker policy."
+        )
+    else:
+        inference_note = "All inference ran on a local open-weight model."
     lines.extend(
         [
             "",
             "## Methodology",
             "",
-            "The planner is guided to start with recon, then scanning and validation; actual "
-            "steps are recorded above. Findings are derived from recorded tool output stored in "
-            "append-only memory; hypotheses remain in the "
-            "attack tree until confirmed. The recorded backend may be a local model or "
-            "a replay stream; review each finding manually.",
+            "Recon precedes scanning, scanning precedes validation, and the execution trace "
+            "above is the actual sequence. Findings are derived only from recorded tool output "
+            "stored in append-only memory; hypotheses remain in the attack tree until "
+            f"confirmed. {inference_note}",
             "",
         ]
     )

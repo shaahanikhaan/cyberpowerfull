@@ -29,6 +29,19 @@ from cyberpowerfull.templating import get_environment
 from cyberpowerfull.tools.registry import catalog
 
 REQUIRED_SKILLS = {
+    "subdomain_enum",
+    "network_services",
+    "tls_hardening",
+    "api_security",
+    "graphql",
+    "deserialization",
+    "cms_wordpress",
+    "cloud_metadata",
+    "active_directory",
+    "container_kubernetes",
+    "credential_testing",
+    "exploit_availability",
+    "external_validation",
     "authentication_jwt",
     "idor",
     "sql_injection",
@@ -87,7 +100,7 @@ def context(scope) -> PromptContext:
 class TestSkillPacks:
     def test_all_required_skills_present(self) -> None:
         assert set(skill_names()) >= REQUIRED_SKILLS
-        assert len(SKILLS) == 16
+        assert len(SKILLS) == 29
 
     def test_every_pack_renders(self) -> None:
         for name in skill_names():
@@ -98,7 +111,7 @@ class TestSkillPacks:
 
     def test_render_all(self) -> None:
         text = render_skills(None, {"target": "127.0.0.1", "difficulty_level": "low"})
-        assert text.count("## Skill:") == 16
+        assert text.count("## Skill:") == 29
         assert "---" in text
 
     def test_unknown_skill(self) -> None:
@@ -109,7 +122,7 @@ class TestSkillPacks:
 
     def test_skill_index(self) -> None:
         index = skill_index()
-        assert len(index) == 16
+        assert len(index) == 29
         assert {item["name"] for item in index} == set(skill_names())
         assert all(item["tools"] for item in index)
 
@@ -129,11 +142,12 @@ class TestSystemPrompt:
             "## 6. task_difficulty_assessment",
             "## 7. evidence_guided_attack_tree_search",
             "## 8. memory",
-            "## 9. tool_catalogue",
-            "## 10. skill_packs",
-            "## 11. current_objective",
-            "## 12. stop_conditions",
-            "## 13. safety",
+            "## 9. host_toolchain",
+            "## 10. tool_catalogue",
+            "## 11. skill_packs",
+            "## 12. current_objective",
+            "## 13. stop_conditions",
+            "## 14. safety",
         ):
             assert heading in prompt
 
@@ -150,7 +164,7 @@ class TestSystemPrompt:
 
     def test_all_skill_packs_injected(self, context: PromptContext) -> None:
         prompt = build_system_prompt(context)
-        assert prompt.count("## Skill:") == 16
+        assert prompt.count("## Skill:") == 29
         assert "difficulty_level: medium" in prompt or "difficulty_level: low" in prompt
 
     def test_tool_catalogue_injected(self, context: PromptContext) -> None:

@@ -1,0 +1,21 @@
+{# Skill pack: external_validation #}
+## Skill: External Agent Validation
+applies_when: Use when the external_agents capability is granted and a deeper pass is justified.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - a hypothesis needs multi-step exploitation reasoning
+  - the local evidence is strong but unconfirmed
+probe_order:
+  1. Ensure the target and its dependencies are inside scope
+  2. Delegate once with an explicit budget and turn cap, scope embedded in the instruction
+  3. Treat returned findings as hypotheses until the underlying request/response is recorded
+validation_criteria:
+  - the delegated report names a concrete request and a matching response
+  - severity is re-derived from the evidence, never copied from the vendor score
+evidence_required:
+  - the agent name, the budget used, and the report excerpt supporting the claim
+constraints:
+  - one delegation per hypothesis; no chained external agents
+  - no out-of-band cloud callbacks and no data extraction

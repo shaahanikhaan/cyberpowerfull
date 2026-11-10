@@ -1,0 +1,22 @@
+{# Skill pack: subdomain_enum #}
+## Skill: Subdomain Enumeration
+applies_when: Use when the engagement includes a parent domain and its subdomains.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - wildcard DNS pointing every name at one address
+  - certificate transparency entries that list additional names
+probe_order:
+  1. Passive sources first: subfinder, amass passive mode
+  2. Resolve collected names and keep only names inside scope
+  3. Confirm live HTTP services with httpx before any deeper probe
+  4. Add virtual-host discovery only when the target has a dedicated web front end
+validation_criteria:
+  - the name resolves and is inside the declared domain scope
+  - a live service answers on the resolved name, or the name is a dangling record
+evidence_required:
+  - the resolver answer, the source of the name, and the HTTP status when live
+constraints:
+  - never enumerate or probe a parent domain that is not in scope
+  - stop subdomain brute force once rate limits are reached

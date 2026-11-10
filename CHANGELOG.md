@@ -4,7 +4,67 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Readiness and Safety Hardening
+## [3.0.0] — Depth, automation, and live host awareness
+
+This release makes the agent substantially more capable without weakening the authorization
+model. Every addition runs through the same worker guardrails: scope re-check, phase check,
+capability gate, negative cache, argv-only execution. It also carries the readiness and
+safety hardening recorded below that landed on `main` while this release was in progress.
+
+### Added
+
+- **26 typed tools** (was 9). New wrappers: `masscan`, `naabu`, `amass`, `dnsrecon`, `katana`,
+  `whatweb`, `wpscan`, `gobuster`, `feroxbuster`, `arjun`, `wafw00f`, `testssl`, `searchsploit`,
+  `hydra`, plus external-agent adapters `strix`, `pentagi`, and `sn1per`.
+- **Capability model** (`Capability`: `aggressive`, `credential_testing`, `external_agents`,
+  `destructive`). Tools declare the capability they need; the worker blocks them before execution
+  unless `scope.json` grants it. Capabilities are part of the scope fingerprint and the prompt.
+- **Deterministic playbook engine** (`playbook.py`): six playbooks (`recon`, `web`, `network`,
+  `stealth`, `api`, `full`), 34 ordered steps, parallel groups, and fact-driven adaptivity —
+  discovered ports become the next scan's port list, live URLs and technology select testssl,
+  wpscan, arjun, and Exploit-DB lookups. Runs with no model at all.
+- **Live host inventory** (`inventory.py`): probes 68 catalogued binaries (including Kali renames
+  `httpx-toolkit`, `testssl.sh`, `nxc`), reads version banners, discovers wordlists with kind and
+  compression flags, counts nuclei templates and NSE scripts, detects Docker and external agents.
+  The inventory is injected into the system prompt; nothing is simulated.
+- **Offline knowledge base** (`knowledge.py` + CLI): `--search-exploits` (local Exploit-DB),
+  `--templates` (nuclei), `--nse` (Nmap scripts), `--wordlists`. Missing sources exit `6` instead
+  of returning an indistinguishable empty result.
+- **External autonomous systems**: Strix (headless CLI with budget and turn caps), PentAGI
+  (GraphQL `createFlow` + polling, REST fallback, report retrieval), Sn1per (real CLI + real loot
+  workspace parsing). All three require `external_agents` and receive a scope statement.
+- **13 new skill packs** (29 total), including `network_services`, `tls_hardening`, `api_security`,
+  `graphql`, `cms_wordpress`, `active_directory`, `container_kubernetes`, `credential_testing`,
+  `exploit_availability`, and `external_validation`.
+- **Per-step skill selection**: at most eight packs (tree hypotheses first, then phase-appropriate
+  packs), so the prompt fits a small local model's context window.
+- **CLI**: `--playbook`, `--parallel`, `--max-steps`, `--list-playbooks`, `--agents`,
+  `--toolchain [--json]`, `--doctor`, `--search-exploits`, `--templates`, `--nse`, `--wordlists`.
+- **New exit code `8`** for an unknown playbook name.
+- **Docs**: `docs/KALI.md` (host layout, packages, readiness) and `docs/INTEGRATIONS.md`
+  (Strix, PentAGI, Sn1per setup and limits).
+
+### Changed
+
+- Worker allowlists are derived from the registry and the tool phase, with explicit cross-phase
+  extras, plus a new `external` worker that can only run external-agent tools.
+- The reasoning loop now consults the negative cache before executing a delegated tool, so an
+  identical failing invocation is not retried within a run.
+- Reports list the attack-tree node per step and state plainly when a run used no model.
+- Binary resolution honours alternate executable names and rewrites `argv[0]` only.
+- Default scope grants `aggressive` for the loopback lab; `scope.example.json` documents all four
+  capabilities.
+- Version, badges, and documented counts updated; CI adds a playbook smoke run and a live
+  inventory check.
+
+### Fixed
+
+- Degraded gracefully when a probed directory is unreadable (`/root/nuclei-templates` under a
+  non-root user raised `PermissionError`).
+- Masscan JSON parsing tolerates the progress banners it prints before the JSON body.
+- PentAGI reports that are JSON are parsed as records instead of being scraped as prose.
+
+## [2.1.0] — Readiness and Safety Hardening
 
 ### Fixed
 

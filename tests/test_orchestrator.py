@@ -188,7 +188,8 @@ class TestRunLoop:
         orchestrator.run()
         system_prompt, step_prompt = client.calls[0]
         assert "authorized_scope" in system_prompt
-        assert "## Skill: SQL Injection" in system_prompt
+        assert "## 9. host_toolchain" in system_prompt
+        assert "## Skill: Information Disclosure" in system_prompt
         assert "127.0.0.1" in step_prompt
 
     def test_policy_violation_stops_run(self, scope) -> None:

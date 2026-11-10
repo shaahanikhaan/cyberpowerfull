@@ -37,6 +37,7 @@ from cyberpowerfull.errors import (
     ScopeError,
     ScopeViolation,
 )
+from cyberpowerfull.inventory import NUCLEI_TEMPLATE_ROOTS, WORDLIST_ROOTS, build_toolchain
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import (
     BudgetState,
@@ -48,17 +49,49 @@ from cyberpowerfull.models import (
     utcnow,
 )
 from cyberpowerfull.scope import Scope, network_contains, normalize_host
-from cyberpowerfull.skills import skill_names
+from cyberpowerfull.skills import select_skills, skill_names
 from cyberpowerfull.tools.base import BaseTool, ToolResult, ToolStatus
 from cyberpowerfull.tools.registry import catalog, get_tool
 from cyberpowerfull.trace import StepRecord, Trace, TraceRecorder
 
-#: Deterministic delegation allowlist: which worker may run which tool.
-WORKER_TOOL_ALLOWLIST: dict[str, frozenset[str]] = {
-    "recon": frozenset({"nmap", "httpx", "subfinder", "tcp_probe", "nikto"}),
-    "scan": frozenset({"nmap", "nikto", "ffuf", "nuclei", "tcp_probe", "httpx"}),
-    "validate": frozenset({"nuclei", "sqlmap", "dalfox", "ffuf", "httpx"}),
+#: Phase each worker owns. The allowlist is derived from the registry, so adding
+#: a tool wrapper automatically makes it delegable to the right worker.
+WORKER_PHASES: dict[str, tuple[Phase, ...]] = {
+    "recon": (Phase.RECON,),
+    "scan": (Phase.SCANNING,),
+    "validate": (Phase.VALIDATION,),
+    "external": (),
 }
+
+#: Cross-phase tools a worker may additionally run (surface mapping needs a port
+#: sweep, validation needs an HTTP probe, and so on).
+WORKER_EXTRA_TOOLS: dict[str, tuple[str, ...]] = {
+    "recon": ("nmap", "nikto", "tcp_probe"),
+    "scan": ("httpx", "tcp_probe"),
+    "validate": ("ffuf", "httpx"),
+    "external": (),
+}
+
+
+def _worker_allowlist() -> dict[str, frozenset[str]]:
+    from cyberpowerfull.tools.registry import all_tools
+
+    tools = all_tools()
+    mapping: dict[str, frozenset[str]] = {}
+    for worker, phases in WORKER_PHASES.items():
+        if worker == "external":
+            mapping[worker] = frozenset(name for name, tool in tools.items() if tool.external)
+            continue
+        allowed = {
+            name for name, tool in tools.items() if tool.phase in phases and not tool.external
+        }
+        allowed.update(name for name in WORKER_EXTRA_TOOLS[worker] if name in tools)
+        mapping[worker] = frozenset(allowed)
+    return mapping
+
+
+#: Deterministic delegation allowlist: which worker may run which tool.
+WORKER_TOOL_ALLOWLIST: dict[str, frozenset[str]] = _worker_allowlist()
 
 
 class DelegationRequest(BaseModel):
@@ -66,7 +99,7 @@ class DelegationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    agent: Literal["recon", "scan", "validate"] = "recon"
+    agent: Literal["recon", "scan", "validate", "external"] = "recon"
     tool: str = Field(min_length=1, max_length=64)
     args: dict[str, Any] = Field(default_factory=dict)
     node: str | None = None
@@ -99,6 +132,31 @@ def _network_entry(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _library_file(value: str) -> bool:
+    """True for a real file inside the host's wordlist / nuclei-template trees.
+
+    ``allowed_wordlists`` and ``allowed_nuclei_templates`` exist so the model cannot
+    point a fuzzer at arbitrary host files (``/etc/shadow``, an SSH key). Files from
+    the operator's own installed libraries - the Kali wordlist and nuclei template
+    directories reported by the live inventory - are that same category of trusted
+    data, so they are accepted without listing every path after every update.
+    """
+    try:
+        candidate = Path(value).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    if not candidate.is_file():
+        return False
+    for root in (*WORDLIST_ROOTS, *NUCLEI_TEMPLATE_ROOTS):
+        try:
+            base = Path(root).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if candidate == base or base in candidate.parents:
+            return True
+    return False
 
 
 def _allowed_file(value: str, allowed: list[str]) -> bool:
@@ -193,6 +251,17 @@ class WorkerAgent:
                 error=f"phase {tool.phase.value!r} is not permitted by scope.json",
             )
 
+        capability = tool.required_capability
+        if capability is not None and not self.scope.allows(capability):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    f"tool {tool.name!r} requires the {capability.value!r} capability; add it "
+                    "to scope.json only when the engagement authorises it"
+                ),
+            )
+
         target = request.args.get("target")
         if not isinstance(target, str) or not target.strip():
             return ToolResult(
@@ -219,8 +288,9 @@ class WorkerAgent:
                     "set allow_passive_sources in scope"
                 ),
             )
-        if tool.name == "ffuf" and not _allowed_file(
-            str(request.args.get("wordlist", "")), self.scope.allowed_wordlists
+        if tool.name == "ffuf" and not (
+            _allowed_file(str(request.args.get("wordlist", "")), self.scope.allowed_wordlists)
+            or _library_file(str(request.args.get("wordlist", "")))
         ):
             return ToolResult(
                 tool=tool.name,
@@ -230,13 +300,19 @@ class WorkerAgent:
         if tool.name == "nuclei":
             templates = request.args.get("templates") or []
             if not templates or any(
-                not _allowed_file(str(path), self.scope.allowed_nuclei_templates)
+                not (
+                    _allowed_file(str(path), self.scope.allowed_nuclei_templates)
+                    or _library_file(str(path))
+                )
                 for path in templates
             ):
                 return ToolResult(
                     tool=tool.name,
                     status=ToolStatus.BLOCKED,
-                    error="nuclei requires explicit files listed in scope.allowed_nuclei_templates",
+                    error=(
+                        "nuclei requires explicit template files listed in "
+                        "scope.allowed_nuclei_templates or from the local template library"
+                    ),
                 )
         policy = self.policy
         if timeout_s is not None:
@@ -295,6 +371,8 @@ class Orchestrator:
         skills: list[str] | None = None,
         context_window: int = 32768,
         run_id: str | None = None,
+        toolchain: Any | None = None,
+        skill_limit: int = 8,
     ) -> None:
         self.scope = scope
         self.config = config
@@ -308,6 +386,7 @@ class Orchestrator:
             raise ValueError("orchestrator run_id must match the memory run_id")
         self.run_id = run_id or memory.run_id
         self.skills = skills or skill_names()
+        self.skill_limit = skill_limit
         self.tools = tools or {}
         self.tree = tree or AttackTree(target=target)
         self.root = RootAgent(client)
@@ -322,6 +401,7 @@ class Orchestrator:
         self._tool_catalog = (
             [tool.describe() for tool in self.tools.values()] if self.tools else catalog()
         )
+        self.toolchain = toolchain or build_toolchain(versions=False, include_wordlists=True)
 
     # -- planning ----------------------------------------------------------
     def _assess(self, budget: BudgetState) -> TDAReport:
@@ -354,8 +434,23 @@ class Orchestrator:
             memory_digest=self.memory.digest(),
             difficulty=tda,
             tree_digest=self.tree.digest(),
-            skill_names=self.skills,
+            skill_names=(
+                self.skills
+                if self.skills is not None
+                else select_skills(
+                    node_phase,
+                    [node.skill for node in self.tree.selectable_nodes() if node.skill],
+                    limit=self.skill_limit,
+                )
+            ),
             tools=self._tool_catalog,
+            toolchain_summary=self.toolchain.summary_lines(),
+            capabilities=[capability.value for capability in self.scope.capabilities],
+            external_agents=[
+                f"{name}: {'available' if info.get('available') else 'unavailable'} "
+                f"(requires {', '.join(info.get('requires', [])) or 'nothing'})"
+                for name, info in sorted(self.toolchain.external_agents.items())
+            ],
         )
 
     # -- execution ---------------------------------------------------------
@@ -544,6 +639,35 @@ class Orchestrator:
             node_id = request.node if request.node and self.tree.has(request.node) else node.id
             if request.expand:
                 self.tree.expand(node_id, request.expand, tda.max_depth)
+
+            cached_failure = self.memory.negative_cache_hit(request.tool, request.args)
+            if cached_failure and not self.config.dry_run:
+                self._failed_attempts += 1
+                record = self._record_step(
+                    recorder,
+                    index=budget.iterations,
+                    action="delegate",
+                    phase=node.phase,
+                    tool=request.tool,
+                    args=request.args,
+                    node=node_id,
+                    tda=tda,
+                    started_at=step_started,
+                    started_monotonic=t0,
+                    reason=decision.reason,
+                    thought=decision.thought,
+                    error=f"negative cache: {cached_failure}",
+                )
+                self._persist_step(record, decision, ok=False, error=cached_failure)
+                self._emit(progress, record)
+                known_failures.append(f"{request.tool}: {cached_failure}")
+                last_result_payload = {
+                    "tool": request.tool,
+                    "status": "skipped",
+                    "observations": ["identical invocation already failed; not retried"],
+                    "error": cached_failure,
+                }
+                continue
 
             worker = self._workers[request.agent]
             remaining = max(0.0, budget.max_seconds - (time.monotonic() - started))

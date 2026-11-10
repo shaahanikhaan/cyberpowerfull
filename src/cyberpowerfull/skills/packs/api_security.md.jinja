@@ -1,0 +1,22 @@
+{# Skill pack: api_security #}
+## Skill: API Security
+applies_when: Use when JSON/REST endpoints or documented API routes are reachable.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - object identifiers in paths or bodies
+  - hidden parameters accepted by the handler
+  - versioned routes with inconsistent authorisation
+probe_order:
+  1. Harvest routes from JavaScript and OpenAPI documents with katana
+  2. Discover accepted parameters with arjun, then test authorisation per object
+  3. Compare responses across two identities of the same privilege level
+  4. Confirm with nuclei API templates, never with destructive payloads
+validation_criteria:
+  - the same request with a different identity returns data it must not
+  - an undocumented parameter changes server behaviour
+evidence_required:
+  - both requests, both responses, and the field that differs
+constraints:
+  - no mass enumeration of identifiers beyond the agreed sample size

@@ -1,288 +1,558 @@
 # cyberpowerfull
 
-**What is it?** A local-only autonomous penetration-testing agent: a model-backed reasoning loop
-that calls typed tools and records evidence against an authorized target. It is not a chatbot.
+**What is it?** A local-only autonomous penetration-testing agent — a model-backed reasoning
+loop **and** a deterministic multi-tool automation engine — that is not a chatbot, needs
+no cloud API key, needs no docker for its core loop, and runs real typed tools against an
+authorized target with evidence capture: recon, scanning, validation, and reporting.
 
 **What does it do?** Recon, scanning, validation, and reporting against an authorized target —
-port discovery, HTTP probing, content discovery, template validation, and evidence reporting.
+subdomain and DNS enumeration, port and service discovery, HTTP probing, crawling, content
+discovery, TLS review, CMS enumeration, template validation, bounded credential testing,
+public-exploit correlation, and budgeted delegation to external autonomous agents.
 
-**What makes it different?** Difficulty-aware planning, a typed tool layer, append-only memory,
-no cloud API key, no Docker, and a reproducible local lab mode.
+**What makes it different?** Two execution paths over one guarded tool layer: the reasoning loop
+(TDA + EGATS) when you want a model to choose steps, and six deterministic playbooks when you
+want reproducible automation with no model at all. Plus a live inventory of the host toolchain,
+capability-gated aggression, append-only memory, an offline knowledge base (Exploit-DB, nuclei
+templates, NSE scripts), and no cloud API key, no Docker for the core loop, and no chat surface.
 
-[![version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 
-The current checkout is version **2.0.0**; there is no published v1.5 specification in this
-repository. This is beta software, not a substitute for a professional assessment. See the
-[readiness audit](docs/readiness-audit.md) for research, verified behavior, and residual risks.
+| Property | Value |
+|---|---|
+| Reasoning | local open-weight model (Qwen3-4B / equivalent) via Ollama or llama.cpp — optional |
+| Automation | 6 deterministic playbooks, 34 ordered steps, parallel groups, fact-driven adaptivity |
+| Typed tools | 26 (22 CLI wrappers, 1 native connector, 3 external-agent adapters) |
+| External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
+| Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
+| Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
+| Tests | 582 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
+
+> **This repository is pentest-only.** The previous general-purpose "assistant" surface, the
+> rule-based pseudo-brain, and the unverifiable marketing claims were removed in 2.0. 3.0 adds
+> depth (more tools, a real automation engine, external-agent adapters, live host inventory)
+> without loosening the authorization model. See [CHANGELOG.md](CHANGELOG.md).
+
+---
 
 ## Safety & Scope (read first)
 
-Use only on systems you own or have explicit written authorization to test. The program requires
-an authorized `scope.json` and checks the primary target and phase before every delegated call.
-A missing, invalid, unauthorized, or expired scope exits `3`; an out-of-scope CLI target exits `4`.
+The agent **refuses to run without `scope.json`**. There is no override flag, no "`--force`",
+and no interactive confirmation prompt that a user could click through.
 
-**These checks are guardrails, not an operating-system or network sandbox.** Third-party scanners,
-local templates, DNS, redirects, tool configuration, and target responses can cause traffic that
-the Python process cannot fully inspect or constrain. Run in an isolated environment with
-operator-controlled DNS and outbound firewall rules; review the selected tools, templates,
-wordlists, and target traffic before use. Some scanner tests can change server state. Do not run
-against a production service without agreeing on those risks and rate limits with its owner.
+- `scope.json` must contain `{"authorized": true}` and a non-empty target list. Anything else
+  exits with code `3` before a single tool is invoked.
+- Every tool call is re-validated against the scope by the worker layer. A target outside the
+  scope is blocked, recorded as a blocked attempt, and never executed (exit code `4` for the
+  requested `--target`).
+- **Capabilities are explicit opt-ins.** A tool that needs a capability is blocked before
+  execution unless `scope.json` grants it. Nothing aggressive is enabled by accident:
 
-- `targets` are exact hosts/IPs or CIDRs. `domains` include the named domain and its subdomains;
-  `*.example.test` includes subdomains only, not the apex. Exclusions take precedence. Scope is
-  **host-based**: it does not restrict ports, paths, or HTTP methods.
-- A DNS lookup resolving into an excluded IP network is blocked before the native TCP probe and
-  checked on a best-effort basis before other scanners. External tools can resolve again; enforce
-  exclusions at the network boundary too.
-- `max_rps` paces native TCP connections and is translated into supported scanner rate/delay
-  flags. It is **not a guaranteed global traffic limit**: tool versions, retries, DNS, templates,
-  subprocesses, and concurrent runs can exceed it. Use an external rate limiter when required.
-- `subfinder` contacts third-party sources and is blocked unless `allow_passive_sources` is
-  explicitly set to `true`. `ffuf` requires an existing file listed in `allowed_wordlists`;
-  `nuclei` requires explicit, existing files listed in `allowed_nuclei_templates`. Paths are
-  operator-controlled, not chosen freely by the model. Only allow files you have reviewed.
-- `nuclei` is started with Interactsh, HTTP redirects, and update checks disabled; `httpx` may
-  follow only same-host redirects; sqlmap is told not to follow redirects or proxies. These flags
-  do not make arbitrary third-party templates or binaries safe. Model traffic is restricted to
-  loopback and does not follow redirects or use environment HTTP proxies.
-- Findings are observations or tool-reported candidates, **not proof of impact**. A Nuclei
-  template match is unverified; an open port alone does not identify a service. Review findings
-  and evidence manually.
+  | Capability | Unlocks | Examples |
+  |---|---|---|
+  | `aggressive` | high-rate scans and full-range sweeps | `masscan`, `naabu` |
+  | `credential_testing` | bounded online authentication testing | `hydra` |
+  | `external_agents` | delegation to third-party autonomous systems | `strix`, `pentagi`, `sn1per` |
+  | `destructive` | reserved; no shipped tool requires it | — |
 
-Traces, reports, and SQLite memory can contain sensitive URLs, cookies, request bodies, model
-output, and evidence. New files are written with owner-only permissions on POSIX, but they are
-**not encrypted**; existing directory permissions are not changed. Protect and delete engagement
-files according to your agreement. See [SECURITY.md](SECURITY.md).
+- Scope, including granted capabilities, is injected into the system prompt by the system, not by
+  the model, together with a SHA-256 fingerprint that is embedded in every trace. Changing the
+  capability list changes the fingerprint.
+- Out-of-band interaction is disabled (`nuclei -no-interactsh`), cloud inference endpoints are
+  rejected at the transport layer, and tool subprocesses run with cloud credentials stripped
+  from the environment.
+- Exploitation is proof-only: no persistence, no lateral movement, no data extraction, no
+  denial of service, no webshells. `searchsploit` reports that exploit code exists; it never
+  downloads or runs it.
+- Recovered passwords from `hydra` are redacted in evidence. Traces and reports are engagement
+  artefacts, not a credential store.
+
+**These checks are guardrails, not an operating-system or network sandbox.** Read the precise
+limits before pointing the agent at anything that matters:
+
+- Scope is **host-based**: exact hosts/IPs, CIDRs, `example.test` (apex + subdomains), and
+  `*.example.test` (subdomains only). It does not restrict ports, paths, or HTTP methods;
+  exclusions win over inclusions.
+- A DNS answer inside an excluded network is blocked before the native TCP probe and checked
+  best-effort before other scanners. External tools may resolve again — enforce exclusions at the
+  network boundary too.
+- `max_rps` paces native TCP connects and is translated into supported scanner rate/delay flags.
+  It is **not a guaranteed global traffic limit**: retries, templates, DNS, subprocesses, and
+  parallel groups can exceed it.
+- `subfinder` is blocked unless `allow_passive_sources` is set; `ffuf` and `nuclei` accept only
+  operator-listed files or files from the local wordlist/template libraries. Indexes are the
+  operator's responsibility — review templates before granting them.
+- Third-party scanners, templates, and target responses can produce traffic this process cannot
+  inspect. Run on an isolated host with egress rules, use test accounts, and watch the run.
+- A finding is an observation or a tool-reported candidate, **not proof of impact**. An open port
+  does not identify a service; a template match is unverified until the evidence says otherwise.
+- Traces, reports, and SQLite memory can contain URLs, cookies, request bodies, and model output.
+  New files are owner-only on POSIX but not encrypted; protect and delete them per the agreement.
+
+Test only assets you are contractually authorized to test. Unauthorized access to computer
+systems is a criminal offence in most jurisdictions. See [SECURITY.md](SECURITY.md) and the
+[readiness audit](docs/readiness-audit.md) for verified behaviour and residual risk.
+
+---
 
 ## Architecture
 
+Four components, strict separation, a deterministic control plane around an optional LLM:
+
 ```
-operator scope + target
-       │
-       ▼
-local model or recorded decisions ─► root agent (delegate / terminate only)
-       │                                     │
-       │                              TDA + attack tree
-       │                                     ▼
-       └──────────────────────────► worker + scope/policy checks
-                                             │
-                                   typed tool / native TCP probe
-                                             │
-                                             ▼
-                              run-isolated append-only SQLite memory
-                                             │
-                                             ▼
-                                  JSON trace + Markdown/JSON reports
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ LAYER 1 — REASONING (optional: local model, e.g. Qwen3-4B via Ollama)        │
+│   system_prompt.jinja → TDA → EGATS node → one JSON decision per step        │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                │  {"step": 3, "tool": "delegate", "args": {…}}
+┌───────────────────────────────▼──────────────────────────────────────────────┐
+│ ROOT AGENT — orchestration only. Permitted actions: delegate | terminate.    │
+│   no executor · no shell · no subprocess handle · no memory write access     │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                │  DelegationRequest (Pydantic, extra keys rejected)
+┌───────────────────────────────▼──────────────────────────────────────────────┐
+│ LAYER 2 — GUARDED EXECUTION (deterministic, shared by both execution paths)  │
+│   workers: recon | scan | validate | external                                │
+│   allowlists derived from the registry · phase check · capability gate       │
+│   scope re-check · negative cache · argv list (shell=False) · parser         │
+│   26 typed tools · 29 skill packs · 6 playbooks                              │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                │  ToolResult(status, findings, observations)
+┌───────────────────────────────▼──────────────────────────────────────────────┐
+│ LAYER 3 — MEMORY (deterministic, append-only SQLite)                         │
+│   findings · attempts (negative cache) · steps · evidence                    │
+│   UPDATE/DELETE rejected by triggers · model sees a read-only MemoryView     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+LIVE HOST INVENTORY  ──►  which/whatis, version banners, /usr/share scans
+                          wordlists · nuclei templates · NSE · Exploit-DB
+                          feeds the prompt, the playbooks, and --doctor
 ```
 
-The model selects one action at a time; it does not build shell commands. Workers validate typed
-arguments, check the authorized target, apply per-tool guardrails, and execute argv lists with
-`shell=False`. A deterministic task-difficulty assessment (TDA) and evidence-guided attack tree
-help select the next hypothesis. Recon → scanning → validation is a planning guideline, not a
-hard phase-order guarantee. Two identical consecutive failed attempts are blocked in a run.
+Two execution paths, identical guardrails:
 
-SQLite records are keyed by run ID, so findings and failures from an earlier run do not enter a
-new run's prompts or suppress its findings. SQL triggers reject ordinary UPDATE/DELETE operations;
-they do not protect the database from someone with filesystem or schema access.
+```
+path A (reasoning)            path B (playbook)
+TDA → EGATS → model → JSON    playbook definition (groups of steps)
+        │                            │
+        └────────► DelegationRequest ◄────────┘
+                         │
+              WorkerAgent.execute()  ← scope, phase, capability, cache
+                         │
+                 typed tool → findings
+```
+
+**Task Difficulty Assessment** (`brain/tda.py`) scores four measurable dimensions and maps
+them to a difficulty level, an expansion threshold, and a maximum tree depth:
+
+| Dimension | Meaning | Weight |
+|---|---|---|
+| Horizon | fraction of the step budget consumed | 0.35 |
+| Evidence confidence | strength of the evidence collected so far | 0.30 (inverted) |
+| Context load | fraction of the context window consumed | 0.20 |
+| Historical success | success rate over recorded attempts | 0.15 (inverted) |
+
+**Evidence-Guided Attack Tree Search** (`brain/attack_tree.py`) scores each hypothesis as
+`prior × (1 + evidence) − 0.15 × failures`. When difficulty is `high` or `critical`, nodes that
+cannot clear the raised threshold are pruned instead of explored, and the allowed depth shrinks.
+
+### Repository layout
+
+```
+src/cyberpowerfull/
+├── cli.py                  # pentest-only CLI, exit-code contract
+├── scope.py                # scope.json, capabilities, matching, fingerprint
+├── models.py               # Phase, Capability, Severity, Finding, Decision, BudgetState
+├── config.py               # RunConfig, ModelConfig, ToolPolicy (env sanitation)
+├── inventory.py            # live toolchain: binaries, wordlists, templates, agents
+├── knowledge.py            # local Exploit-DB / nuclei templates / NSE readers
+├── playbook.py             # deterministic multi-tool engine (6 playbooks)
+├── trace.py                # Trace / StepRecord / replay
+├── reporting.py            # Markdown report + findings JSON
+├── brain/
+│   ├── system_prompt.jinja # the behavioural operating system
+│   ├── prompt.py           # Jinja2 renderer (StrictUndefined)
+│   ├── llm.py              # loopback-only Ollama / llama.cpp / replay clients
+│   ├── tda.py              # Task Difficulty Assessment
+│   ├── attack_tree.py      # EGATS state machine
+│   └── orchestrator.py     # RootAgent, WorkerAgent, Orchestrator
+├── tools/                  # 26 typed wrappers + registry + report extractors
+├── skills/packs/           # 29 Markdown/Jinja skill packages
+└── memory/store.py         # append-only SQLite memory
+```
+
+---
 
 ## Quick Start
 
-Python 3.10+ is required. Installing the package downloads its Python dependencies if they are
-not already available. No model or external scanner is needed for the following **loopback-only**
-lab. Commands assume a checkout of this repository.
-
-In terminal 1, install and start a self-owned test service on port 8000:
+A runnable loopback lab: a local listener, one real run against it with a recorded decision
+stream, then the trace rendered back for review. No model, no binaries, no network.
 
 ```bash
 python -m pip install -e .
-python -m http.server 8000 --bind 127.0.0.1
-```
-
-In terminal 2, run the recorded decisions and inspect the report:
-
-```bash
-cyberpowerfull --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json
+python -m http.server 8000 --bind 127.0.0.1 &
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json
 cyberpowerfull --replay traces/latest.json
 ```
 
-The first command **does connect** to your local service using the native `tcp_probe`; it is not a
-simulation. It should produce an informational open-port finding and an exit code of `0`. The
-second command only regenerates reports from the saved trace and contacts neither a target nor a
-model. Stop the HTTP server with Ctrl+C when finished. The bundled lab scope has no expiry and
-authorizes only the listed loopback names/IPs; use an appropriate expiry for real engagements.
+The bundled `scope.json` authorises `127.0.0.1` and `localhost` only, so this works out of the box.
+`examples/decisions.json` is a recorded decision stream (`replay:` backend), which makes the run
+deterministic; `examples/trace-example.json` is the trace it produces.
 
 ### Use a local model
 
-Install and start [Ollama](https://github.com/ollama/ollama), then pull `qwen3:4b` using its
-normal installation instructions. Model downloads require network access and can be large. In
-another terminal:
+```bash
+ollama serve & ollama pull qwen3:4b              # Ollama backend (default)
+llama-server -m qwen3-4b-instruct.gguf -c 32768  # llama.cpp backend, then --llm llamacpp:qwen3
+
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --llm ollama:qwen3:4b
+```
+
+Before pointing it at a real engagement, copy `scope.example.json`, set `authorized` to `true`
+only after you hold written authorization, replace the targets, and grant only the capabilities
+the engagement needs. The agent will not start otherwise.
+
+### Or skip the model entirely
+
+Playbooks run the same tools with no inference at all:
 
 ```bash
-ollama pull qwen3:4b
-cyberpowerfull --check --scope scope.json --target 127.0.0.1 --llm ollama:qwen3:4b
-cyberpowerfull --scope scope.json --target 127.0.0.1 --llm ollama:qwen3:4b
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --playbook network
 ```
 
-`--check` confirms scope, looks for tool executables on `PATH`, and checks model-server
-reachability and the exact Ollama model tag. It does **not** verify scanner versions or prove
-that a scan will succeed. Missing optional binaries are reported; only `tcp_probe` is built in.
-A local model may still choose unavailable or disallowed tools; inspect the trace and exit code.
-llama.cpp is available through `--llm llamacpp:MODEL`, with its server listening on loopback.
+### What a playbook run actually does
 
-### Other useful commands
+```
+$ cyberpowerfull --scope scope.json --target 127.0.0.1 --playbook network
+starting playbook network against 127.0.0.1 (engagement=localhost-lab, steps=9)
+[01] playbook         tcp_probe    status=ok       findings=2 difficulty=-  node=net-tcp
+...
+stop_reason: playbook_complete
+steps:       1 (tool calls: 1, tokens: 0/24000)
+findings:    2 [info=2]
+executed:    1 step(s): net-tcp
+skipped:     8
+  - net-nmap: binary not installed: nmap
+  - net-naabu: binary not installed: naabu
+  - net-services: binary not installed: nmap
+```
+
+Every skipped step states the real reason, and the same list is written into the trace
+(`skipped`) and the report (`## Skipped steps`). Nothing is simulated: if the binary is missing or
+the capability is absent, the step does not run and the artifacts say so.
+
+## Automation playbooks
+
+Playbooks are the sn1per-style path: an ordered set of typed tool calls in parallel groups, with
+arguments derived from what earlier groups discovered. They use the **same** `WorkerAgent`
+guardrails as the reasoning loop, so scope, phase, capability, and the negative cache all apply.
+
+| Playbook | Steps | What it does |
+|---|---|---|
+| `recon` | 11 | native port sweep, subdomain enumeration, DNS records, HTTP probe, WAF, fingerprint, crawl, nikto |
+| `web` | 14 | web fingerprint, crawl, content discovery, nuclei templates, TLS, WordPress (conditional), exploit lookup |
+| `network` | 9 | native sweep, nmap, naabu, masscan (aggressive only), service detection, web-port probes, service exploit lookup |
+| `stealth` | 6 | low-volume pass: passive names, one HTTP probe, fingerprint, limited crawl, medium+ templates only |
+| `api` | 6 | route harvesting, hidden parameters, API templates, path discovery, exploit lookup |
+| `full` | 34 | recon + web + network, dependency-ordered |
+
+Adaptivity is deterministic and evidence-based:
+
+- open ports found in group 0 become the exact `-p` list for the service-detection group;
+- live URLs and technology fingerprints select testssl, wpscan, arjun, and Exploit-DB queries;
+- wordlists are resolved from the host inventory (largest matching uncompressed file, or a
+  documented preference order) — never a fabricated path; if none exists, the step is skipped;
+- a missing binary skips the step; a missing capability skips the step; a previously failed
+  identical invocation is not retried.
 
 ```bash
-# Build commands without connecting to the target; still needs a local model or replay stream.
-cyberpowerfull --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json --dry-run
-
-# Inspect scope and available tool/skill contracts.
-cyberpowerfull --render-prompt --scope scope.json --target 127.0.0.1
-cyberpowerfull --list-tools
-cyberpowerfull --list-skills
-
-# Machine-readable trace on stdout; progress goes to stderr.
-cyberpowerfull --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json --json
+cyberpowerfull --scope scope.json --target app.example.test --playbook web --parallel 4
+cyberpowerfull --scope scope.json --target 10.0.0.5 --playbook network --max-steps 20
+cyberpowerfull --list-playbooks
 ```
 
-Artifacts default to `traces/latest.json`, `artifacts/report-<run_id>.md`,
-`artifacts/findings-<run_id>.json`, and `artifacts/memory.sqlite3`. Use `--out`, `--trace`, and
-`--memory` to choose paths. A dry run still uses the model or decision stream and writes these
-local artifacts; it does not execute or resolve tool targets.
+`examples/playbook-trace-example.json` is a real trace produced by `--playbook network` on a
+Debian host with the native connector only; it shows both the executed step and every skip
+reason.
 
-### Configure an engagement
+---
 
-Copy `scope.example.json`, set the engagement name, authorization reference, exact targets,
-exclusions, allowed phases, rate, and expiry to match the written agreement. The template starts
-with `"authorized": false`; set it to `true` only after confirming written permission. Do not use
-the example domains as real targets. Optional properties default to disabled/empty:
+## External agents: Strix, PentAGI, Sn1per
 
-```json
-{
-  "allow_passive_sources": false,
-  "allowed_wordlists": ["/absolute/path/to/reviewed-wordlist.txt"],
-  "allowed_nuclei_templates": ["/absolute/path/to/reviewed-template.yaml"]
-}
+Three adapters drive real third-party agents. Each requires the engagement capability
+`external_agents`; each injects the scope into the delegated instruction and caps cost.
+
+| Adapter | How it runs | What is parsed | Host requirements |
+|---|---|---|---|
+| `strix` | `strix -n -t <target> --scan-mode <mode> --max-budget <usd> --max-turns <n>` | console output + report files under `strix_runs/` | `pipx install strix-agent`, Docker, `STRIX_LLM`, `LLM_API_KEY` |
+| `pentagi` | GraphQL `createFlow` mutation, then poll `flow(id)`; REST fallback | `report` field, REST report body, or prose | running PentAGI, `PENTAGI_URL`, `PENTAGI_API_TOKEN` |
+| `sn1per` | `sniper -t <target> -m <mode> -w <workspace>` | real loot files under `/usr/share/sniper/loot/<workspace>` | `sn1per` installed (root) |
+
+```bash
+cyberpowerfull --agents                          # live availability check
+export PENTAGI_URL=https://127.0.0.1:8443 PENTAGI_API_TOKEN=…
+cyberpowerfull --scope scope.json --target app.example.test --llm ollama:qwen3:4b
 ```
 
-This is a fragment, not a complete scope file. Allowlisted paths must be existing files. The
-wrappers currently require simple ASCII paths without spaces or `..`; ffuf also supports `~`.
-A Nuclei delegation must explicitly name its allowed template files; unrestricted default-template
-scans are not allowed. An allowlisted file can still contain unsafe behavior, so review it and
-restrict network access separately.
+The model can select them like any other tool (`delegate → external → strix`). Their findings are
+treated as hypotheses until the underlying request/response is recorded — the extractor only
+promotes lines that carry an explicit severity tag, and it re-derives severity from the evidence.
 
-Environment variables `CYBERPOWERFULL_SCOPE`, `CYBERPOWERFULL_LLM`,
-`CYBERPOWERFULL_LLM_BACKEND`, `CYBERPOWERFULL_MODEL`, `CYBERPOWERFULL_LLM_ENDPOINT`,
-`CYBERPOWERFULL_MAX_ITERATIONS`, `CYBERPOWERFULL_MAX_TOKENS`, and
-`CYBERPOWERFULL_MAX_SECONDS` provide defaults; explicit CLI options take precedence. Model
-endpoints must be loopback HTTP(S) addresses. `localhost` is pinned to IPv4 loopback by the
-transport; use `[::1]` explicitly for an IPv6-only service.
+PentAGI self-signed TLS: set `PENTAGI_TLS_VERIFY=false` only on a loopback instance you control.
+Details and troubleshooting: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+
+---
+
+## Host toolchain and local knowledge
+
+The agent plans against the machine it is actually running on. `--toolchain` probes 68 binaries
+(including Kali renames such as `httpx-toolkit` and `testssl.sh`), reads version banners, scans
+wordlist directories, counts nuclei templates and NSE scripts, and detects Docker and the
+external agents.
+
+```bash
+cyberpowerfull --toolchain                 # human-readable inventory + install hints
+cyberpowerfull --toolchain --json          # machine-readable snapshot
+cyberpowerfull --doctor --scope scope.json # pre-engagement readiness check
+cyberpowerfull --wordlists discovery       # discovered content-discovery wordlists
+cyberpowerfull --templates cve             # installed nuclei templates matching 'cve'
+cyberpowerfull --nse http                  # installed NSE scripts matching 'http'
+cyberpowerfull --search-exploits "apache 2.4"   # local Exploit-DB, no network
+```
+
+- **No bundled datasets and no fake data.** An empty inventory is reported as empty, and a
+  missing knowledge source exits with code `6` instead of returning "no results".
+- The system prompt contains the inventory, so the model prefers installed binaries and stops
+  proposing work the host cannot do.
+- Wordlists are only used when they exist and are uncompressed. Compressed lists are listed and
+  flagged, never silently passed to a fuzzer.
+- `docs/KALI.md` documents the expected Kali layout, package names, and install commands.
+
+---
+
+## Common invocations
+
+```bash
+# Validate scope, capabilities, tool availability, and the local model endpoint
+python -m cyberpowerfull.cli --check --scope scope.json --target 127.0.0.1
+
+# Rehearse either path with command lines built but nothing executed
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --dry-run
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --playbook web --dry-run
+
+# Emit the whole trace as JSON on stdout (parseable; reports are still written)
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --playbook network --json
+
+# Inspect what the model is told (regenerate the system prompt)
+python -m cyberpowerfull.cli --render-prompt --scope scope.json --target 127.0.0.1
+
+# Catalogues
+python -m cyberpowerfull.cli --list-tools
+python -m cyberpowerfull.cli --list-skills
+python -m cyberpowerfull.cli --list-playbooks
+python -m cyberpowerfull.cli --agents
+```
+
+Artifacts: `traces/latest.json` (structured run trace), `artifacts/report-<run_id>.md`
+(human review), `artifacts/findings-<run_id>.json` (machine review),
+`artifacts/memory.sqlite3` (append-only memory).
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | run/replay completed without a failed or blocked action; inspect `stop_reason` for normal budget/tree termination |
-| 1 | local storage, trace validation, or prompt-rendering failure |
-| 2 | invalid CLI usage or non-positive budget |
-| 3 | scope missing, invalid, unauthorized, or expired |
-| 4 | requested CLI target outside scope |
-| 5 | inference unavailable, invalid model response, or invalid local model configuration |
-| 6 | a delegated tool failed, timed out, was missing, or received invalid arguments |
-| 7 | root policy violation or blocked worker delegation |
-| 130 | interrupted by the operator |
+| 0 | run completed, every executed action succeeded (tree exhausted, budget, terminate, critical finding) |
+| 1 | unexpected fatal error (e.g. the system prompt could not be rendered) |
+| 2 | usage error |
+| 3 | `scope.json` missing, invalid, unauthorized, or expired |
+| 4 | target outside the authorized scope |
+| 5 | local inference unavailable |
+| 6 | a tool errored, was missing or timed out, or a local knowledge source is absent |
+| 7 | policy violation or a blocked delegation (the root agent tried to run a scanner itself) |
+| 8 | unknown playbook name |
 
-A run saves its trace and reports before returning `5`, `6`, or `7` when possible. A later
-`--replay` reports whether replay itself succeeded, not whether the original run succeeded.
-Time and token budgets are checked at decision boundaries; token counts are estimates. DNS and
-third-party subprocess behavior can exceed a wall-clock budget, so use an external supervisor
-for strict deadlines.
+A failed or incomplete run still writes its trace and reports, then exits non-zero so scripts and
+CI cannot mistake it for a clean result.
+
+---
 
 ## Supported Tools
 
-External tools are **optional** and installed separately. The wrapper is unit-tested against
-sample output; third-party CLI flags and output formats are version-sensitive and are not a
-promise of live compatibility with every release. The native probe is exercised against a real
-loopback service in the test suite. Inspect and independently validate results.
+Every wrapper validates arguments with Pydantic (`extra="forbid"`), builds an argv list with
+`shell=False`, executes through `subprocess` (or an in-process connector), and parses output into
+typed findings. Cloud credentials are stripped from the subprocess environment. Alternate binary
+names are resolved automatically (`httpx` → `httpx-toolkit`, `testssl.sh` → `testssl`).
 
-| Tool | Input schema (key fields) | Output format | Status |
-|---|---|---|---|
-| `nmap` | `target`, `ports`, `service_detection`, allowlisted `scripts` | XML → open ports and banners | tested with mocked subprocess; default NSE script set rejected |
-| `httpx` | URL `target`, `ports`, `tech_detect`, `follow_redirects`, `threads` | JSONL → status, title, technology | tested with mocks; install ProjectDiscovery's httpx |
-| `subfinder` | domain `target`, `all_sources`, `recursive` | hostnames → candidates | tested with mocks; external-source opt-in required |
-| `nuclei` | URL `target`, `severity`, `tags`, `templates`, `rate_limit` | JSONL → unverified template matches | tested with mocks; reviewed allowlisted templates required |
-| `nikto` | `target`, `port`, `ssl`, `tuning` | text → observations | tested with mocks; ambiguous error exits are surfaced |
-| `ffuf` | URL with `FUZZ` in path/query, allowlisted `wordlist`, `method` | JSON file → discovered paths | tested with mocks; no authority fuzzing or redirects |
-| `sqlmap` | URL `target`, `data`, `parameter`, `level`, `risk`, `technique` | text → injection candidates | tested with mocks; preliminary heuristics stay unverified |
-| `dalfox` | URL `target`, `method`, `data`, `cookie`, `workers` | JSON file → XSS candidates | tested with mocks; review compatibility and output |
-| `tcp_probe` | `target`, `ports` (≤64), `timeout_s` | native JSON → open TCP ports | tested with mocks and a loopback service |
+| Tool | Phase | Input schema (key fields) | Output format | Status |
+|---|---|---|---|---|
+| `tcp_probe` | recon | `target`, `ports` (≤64), `timeout_s` | native JSON | tested (unit + live loopback) |
+| `subfinder` | recon | `target` (domain), `all_sources`, `recursive` | hostnames per line | tested (unit) |
+| `amass` | recon | `target` (domain), `timeout_minutes` | hostnames per line | tested (unit) |
+| `dnsrecon` | recon | `target` (domain), `scan_type`, `lifetime_s` | JSON file (`-j`) | tested (unit) |
+| `httpx` | recon | `target` (URL), `ports`, `tech_detect`, `follow_redirects` | JSONL | tested (unit) |
+| `katana` | recon | `target` (URL), `depth`, `concurrency`, `rate_limit`, `js_crawl` | JSONL | tested (unit) |
+| `wafw00f` | recon | `target` (URL), `find_all` | JSON file | tested (unit) |
+| `nmap` | scanning | `target`, `ports` (`top-N`/list), `service_detection`, `timing`, `scripts` (allowlist) | XML (`-oX -`) | tested (unit) |
+| `masscan` | scanning | `target`, `ports`, `rate`, `wait_s` | JSON (`-oJ -`) | tested (unit) |
+| `naabu` | scanning | `target`, `top_ports`, `ports`, `rate`, `exclude_cdn` | JSONL | tested (unit) |
+| `whatweb` | scanning | `target` (URL), `aggression` | JSON log | tested (unit) |
+| `nikto` | scanning | `target`, `port`, `ssl`, `tuning` | plain text | tested (unit) |
+| `ffuf` | scanning | `target` (must contain `FUZZ`), `wordlist`, `method`, `match_codes` | JSON file | tested (unit) |
+| `gobuster` | scanning | `target`, `mode` (dir/dns/vhost/fuzz), `wordlist` (auto-resolved) | text (`-o`) | tested (unit) |
+| `feroxbuster` | scanning | `target`, `wordlist` (auto-resolved), `depth`, `threads` | JSONL | tested (unit) |
+| `arjun` | scanning | `target`, `method` (GET/POST/JSON), `threads` | JSON file | tested (unit) |
+| `testssl` | scanning | `target` (URL), `severity_floor`, `protocol` | JSON file | tested (unit) |
+| `wpscan` | scanning | `target` (URL), `enumerate`, `plugins_detection` | JSON file | tested (unit) |
+| `nuclei` | validation | `target`, `severity`, `tags`, `templates`, `rate_limit` | JSONL | tested (unit) |
+| `sqlmap` | validation | `target` (URL), `parameter`, `level`, `risk`, `technique` | stdout parse | tested (unit) |
+| `dalfox` | validation | `target` (URL), `method`, `data`, `cookie`, `workers` | JSON file | tested (unit) |
+| `searchsploit` | validation | `target`, `query` (product/CVE) | JSON | tested (unit) |
+| `hydra` | validation | `target`, `service`, `username`, `password_list` (capped), `tasks` (≤8) | text parse | tested (unit) |
+| `strix` | validation | `target` (URL), `scan_mode`, `max_budget_usd`, `max_turns`, `instruction` | console + run dir | tested (unit, mocked binary) |
+| `pentagi` | validation | `target` (URL), `provider`, `max_wait_s`, `poll_s`, `instruction` | GraphQL/REST | tested (unit, mocked HTTP) |
+| `sn1per` | scanning | `target`, `mode`, `workspace`, `port`, `loot_dir` | loot files | tested (unit, tmp loot) |
+
+Status legend: *unit* means argv construction, output parsing, error paths, and `subprocess`
+interactions are covered by tests with mocked subprocess or HTTP calls. These wrappers have not
+been validated against live third-party targets in CI; treat the parsers as version-sensitive.
+`tcp_probe` is also exercised end-to-end by the CI smoke job against a real local socket.
+
+Capability-gated tools (`masscan`, `naabu`, `hydra`, `strix`, `pentagi`, `sn1per`) are blocked by
+the worker layer before execution unless `scope.json` grants the capability.
+
+---
 
 ## Skills
 
-The 16 Markdown/Jinja skill packs are planning guidance, not independent executable features or
-proof that the agent can fully test every category. They are included in the model prompt.
+Skill packs are Markdown/Jinja packages rendered into the system prompt. Each pack states the
+signals that justify it, the probe order, the validation criteria, the evidence required to
+report a finding, and its stop criteria. A skill is a behavioural contract, not executable code.
 
-| Skill pack | Focus |
-|---|---|
-| `authentication_jwt` | authentication and token handling |
-| `idor` | object-level authorization |
-| `sql_injection` | SQL injection candidates |
-| `xss` | cross-site scripting candidates |
-| `ssrf` | server-side request handling |
-| `csrf` | cross-site request forgery |
-| `xxe` | XML external entities |
-| `rce` | remote code execution candidates |
-| `business_logic` | workflow and entitlement rules |
-| `race_conditions` | concurrent workflow behavior |
-| `path_traversal` | path handling |
-| `open_redirect` | redirect validation |
-| `mass_assignment` | client-controlled object fields |
-| `file_uploads` | upload handling |
-| `information_disclosure` | exposed metadata and services |
-| `subdomain_takeover` | dangling service references |
+The prompt carries **at most eight** packs per step: the skills named by the active attack-tree
+hypotheses first, then the packs that fit the current phase. That keeps a 32k-context local model
+from drowning in guidance it cannot act on.
+
+| Skill pack | Covers | Primary tools |
+|---|---|---|
+| `information_disclosure` | banners, debug endpoints, backups, leaked metadata | nmap, httpx, nikto, nuclei, ffuf, tcp_probe |
+| `subdomain_enum` | passive-first subdomain discovery and scoped resolution | subfinder, amass, dnsrecon, gobuster, httpx |
+| `subdomain_takeover` | dangling DNS records pointing at unclaimed resources | subfinder, httpx |
+| `network_services` | port surface, service identification, exploit availability | nmap, masscan, naabu, tcp_probe, searchsploit |
+| `active_directory` | domain discovery and anonymous read access on AD services | nmap, dnsrecon, tcp_probe |
+| `tls_hardening` | protocol, cipher, and certificate weaknesses | testssl, httpx |
+| `api_security` | route harvesting, hidden parameters, object authorisation | katana, arjun, nuclei, ffuf |
+| `graphql` | introspection exposure, field suggestions, mutation authorisation | katana, arjun, nuclei |
+| `cms_wordpress` | core, plugin and theme enumeration with advisory matching | wpscan, whatweb, nuclei |
+| `authentication_jwt` | token handling, `alg` confusion, claim tampering, session lifecycle | httpx, ffuf |
+| `idor` | horizontal and vertical object access with two identities | httpx, ffuf |
+| `csrf` | token presence, SameSite behaviour, Origin validation | httpx |
+| `sql_injection` | boolean differentials, error signatures, confirmation-only sqlmap | sqlmap, ffuf |
+| `xss` | reflection context mapping, payload confirmation | dalfox, ffuf |
+| `ssrf` | server-initiated requests to in-scope collaborators only | httpx, nuclei |
+| `xxe` | DOCTYPE/entity handling in XML, SVG, SOAP, documents | httpx, nuclei |
+| `rce` | proof-only evaluation of interpreters and template engines | nuclei, httpx |
+| `deserialization` | serialised blobs, type confusion, proof-only validation | httpx, nuclei |
+| `business_logic` | client-controlled value, entitlement, and workflow state | httpx, ffuf |
+| `race_conditions` | check-then-act limits with small parallel bursts | httpx |
+| `path_traversal` | encoded traversal sequences against file parameters | ffuf, httpx |
+| `open_redirect` | Location-header control through redirect parameters | httpx, nuclei |
+| `mass_assignment` | privileged fields accepted from client bodies | httpx |
+| `file_uploads` | type, extension, and serving behaviour of uploaded content | httpx, ffuf |
+| `cloud_metadata` | link-local reachability from client-controlled fetches | httpx, nuclei |
+| `container_kubernetes` | orchestrator and kubelet endpoints, read-only exposure checks | httpx, nuclei, testssl |
+| `credential_testing` | explicit, capped, account-scoped authentication testing | hydra, httpx |
+| `exploit_availability` | local Exploit-DB correlation against confirmed versions | searchsploit, nuclei |
+| `external_validation` | budgeted delegation to an external autonomous agent | strix, pentagi, sn1per |
+
+```bash
+python -m cyberpowerfull.cli --list-skills
+```
+
+---
 
 ## How the agent behaves
 
-The system prompt includes the system-loaded scope and fingerprint, a read-only digest of the
-current run's memory, TDA/attack-tree state, tool schemas, and skill guidance. The root role may
-only delegate or terminate; workers use a separate allowlist. Model output is schema-validated,
-but the model and target-controlled output remain untrusted. Prompt instructions are not a
-security boundary. A run may stop on a budget, exhausted tree, confirmed critical finding,
-explicit termination, inference error, or policy violation.
+The system prompt (`src/cyberpowerfull/brain/system_prompt.jinja`) is the behavioural operating
+system. It is rendered with `StrictUndefined` — a missing context key is a hard failure, never a
+silently partial contract — and contains, in order:
+
+1. `root_agent_directive` — orchestration and delegation only; forbidden actions are listed
+   explicitly and enforced in code (`RootAgent.ALLOWED_ACTIONS`).
+2. `core_capabilities` — identity as an authorized pentest validation agent, and the capabilities
+   it explicitly does not have.
+3. `communication_rules` — exactly one JSON object per step, the decision schema, and tool-call
+   requirements.
+4. `execution_guidelines` — authorization, recon → scanning → validation order, evidence rules,
+   tool-selection rules (prefer installed binaries, respect capabilities), proof-only exploitation.
+5. `authorized_scope` — the system-verified scope block, granted capabilities, and fingerprint.
+6. `task_difficulty_assessment` — the four dimensions, the composite score, and the directive.
+7. `evidence_guided_attack_tree_search` — the selection rule and current tree state.
+8. `memory` — read-only digest of findings, severities, failures, and success rate.
+9. `host_toolchain` — installed and missing binaries, wordlists, templates, external agents.
+10. `tool_catalogue` — every tool with phase, install state, capability, and argument schema.
+11. `skill_packs` — the selected packs for this step.
+12. `current_objective`, 13. `stop_conditions`, 14. `safety`.
+
+Stop conditions: attack tree exhausted, budget exhausted (iterations / tokens / seconds), a
+critical finding confirmed with verified evidence, no node clearing the threshold at high
+difficulty, an explicit `terminate`, or a negative-cache hit on the chosen invocation.
+
+### Reasoning backends
 
 | Spec | Backend | Notes |
 |---|---|---|
-| `ollama:qwen3:4b` | Ollama `/api/chat` | local JSON output; Qwen3 thinking is disabled for short structured decisions |
-| `llamacpp:MODEL` | llama.cpp `/v1/chat/completions` | local OpenAI-compatible JSON endpoint |
-| `replay:examples/decisions.json` | recorded decisions | no model, but delegated tools execute unless `--dry-run` is set |
-| `--replay traces/latest.json` | trace replay | reports only; no model or target traffic |
+| `ollama:qwen3:4b` | Ollama `/api/chat` | default; `format: json` enforced |
+| `llamacpp:qwen3` | llama.cpp `/v1/chat/completions` | `response_format: json_object` |
+| `replay:path.json` | recorded decision stream | deterministic reproduction, no model |
+
+Any non-loopback endpoint is rejected with exit code `5` before a request is sent. There is no
+API-key code path for inference and none will be added.
+
+---
 
 ## Development
 
 ```bash
-python -m pip install -e ".[dev]"
+pip install -e ".[dev]"
 ruff check .
 black --check .
-pytest
+pytest                      # 582 tests, coverage gate (70%) in pyproject.toml addopts
+pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```
 
-CI runs lint, formatting, coverage, a loopback lab smoke test, and a package-install check. The
-tests include scope bypass regressions, run isolation, output/exit handling, local-model HTTP
-transport, and real loopback TCP probing. External scanner tests use fixtures and mocked
-subprocesses; they do not establish compatibility with arbitrary installed versions. See
-[docs/readiness-audit.md](docs/readiness-audit.md) for the research and remaining limitations.
+Continuous integration (`.github/workflows/ci.yml`) runs ruff, black, the test suite with
+coverage on Python 3.10–3.12, and two end-to-end smoke jobs:
+
+- a replay decision stream drives the agent against a local mock TCP service; the job asserts
+  that the emitted trace contains steps, tool calls, and findings;
+- a playbook run plus `--toolchain --json` prove that the no-model path and the live inventory
+  work without optional binaries.
+
+Example artifacts are committed under `examples/`: `decisions.json` (replay stream),
+`trace-example.json` (trace produced by that stream), and `playbook-trace-example.json`
+(real playbook trace with executed and skipped steps).
 
 ## Limitations
 
-- This is beta software; manually verify all results and supervise every engagement.
-- Network isolation, rate enforcement, data loss prevention, and scanner sandboxing are the
-  operator's responsibility. Local inference does not mean all scanner activity is offline.
-- Local model quality and available context affect planning; skill packs are not guarantees.
-- There is no web UI, scheduler, multi-tenant server, or general chat interface.
+- Parsers target current tool output formats; upstream CLI changes require parser updates.
+- Validation quality depends on the local model. A 4B model needs a strict prompt and small
+  steps; that is why decisions are single-action JSON with schema validation and why skill text
+  is selected per step.
+- Playbooks do not reason: they execute a fixed, evidence-driven plan. Use the reasoning loop for
+  hypothesis testing, and playbooks for reproducible coverage.
+- External agents run with their own LLM budget and their own judgement. Their findings are
+  hypotheses until local evidence backs them, and their cost is billed by their provider.
+- `searchsploit` reports availability of public exploit code; it does not prove exploitability.
+- Findings are evidence-linked, not proof-of-impact: a `low` finding is a hypothesis with
+  support, not necessarily exploitable.
+- There is no web UI, no multi-tenant server, no scheduling, and no chat interface — by design.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Security reporting: [SECURITY.md](SECURITY.md). Changes:
-[CHANGELOG.md](CHANGELOG.md).
+MIT — see [LICENSE](LICENSE). Security policy and reporting: [SECURITY.md](SECURITY.md).
+Change history: [CHANGELOG.md](CHANGELOG.md). Kali layout and install notes:
+[docs/KALI.md](docs/KALI.md). External agent setup: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).

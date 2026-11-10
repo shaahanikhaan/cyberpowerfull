@@ -1,0 +1,19 @@
+{# Skill pack: container_kubernetes #}
+## Skill: Containers and Kubernetes
+applies_when: Use when container or orchestrator endpoints are inside scope.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - kubelet read-only port, /metrics, /healthz, unprotected dashboard
+  - container images or registries referenced from the target
+probe_order:
+  1. Confirm the orchestrator API or kubelet port with a single read request
+  2. Test anonymous access to documented endpoints only
+  3. Record namespace and workload names, never secrets
+validation_criteria:
+  - an unauthenticated read returns cluster or workload metadata
+evidence_required:
+  - endpoint, method, status, and a short response excerpt
+constraints:
+  - no pod creation, no exec, no secret reads

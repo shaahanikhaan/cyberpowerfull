@@ -39,8 +39,11 @@ class PromptContext:
     tree_digest: str
     skill_names: list[str] = field(default_factory=list)
     tools: list[dict[str, Any]] = field(default_factory=list)
+    toolchain_summary: list[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
+    external_agents: list[str] = field(default_factory=list)
     allowed_actions: tuple[str, ...] = ("delegate", "terminate")
-    worker_agents: tuple[str, ...] = ("recon", "scan", "validate")
+    worker_agents: tuple[str, ...] = ("recon", "scan", "validate", "external")
 
 
 def _schema_hint(schema: dict[str, Any]) -> str:
@@ -70,10 +73,18 @@ def _schema_hint(schema: dict[str, Any]) -> str:
 def tool_line(tool: dict[str, Any]) -> str:
     """Render one catalogue entry for the prompt."""
     install = "installed" if tool.get("installed") else "binary-missing"
+    flags = [
+        tool["phase"],
+        f"skill={tool['skill']}",
+        install,
+        "external-agent" if tool.get("external") else "in-process",
+        "destructive" if tool.get("destructive") else "non-destructive",
+    ]
+    capability = tool.get("capability")
+    if capability:
+        flags.append(f"requires-capability={capability}")
     return (
-        f"- {tool['name']} [{tool['phase']}, skill={tool['skill']}, {install}, "
-        f"{'destructive' if tool.get('destructive') else 'non-destructive'}]: "
-        f"{tool['description']}\n"
+        f"- {tool['name']} [{', '.join(flags)}]: {tool['description']}\n"
         f"  args: {_schema_hint(tool.get('input_schema', {}))}"
     )
 
@@ -98,6 +109,9 @@ def build_system_prompt(ctx: PromptContext) -> str:
         tda_directive=ctx.difficulty.directive,
         difficulty_level=ctx.difficulty.level.value,
         tree_digest=ctx.tree_digest,
+        toolchain_summary=ctx.toolchain_summary or ["toolchain not collected for this step"],
+        capabilities=ctx.capabilities,
+        external_agents=ctx.external_agents,
         tools=[tool_line(tool) for tool in ctx.tools],
         skills=list(ctx.skill_names or all_skill_names()),
         allowed_actions=list(ctx.allowed_actions),
