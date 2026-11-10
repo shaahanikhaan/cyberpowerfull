@@ -172,6 +172,24 @@ jobs:
           grep -q '^recon' /tmp/playbooks.txt
           grep -q '^full' /tmp/playbooks.txt
 
+      - name: One-command lab (real loopback service, no model)
+        run: |
+          python -m cyberpowerfull.cli --lab --quiet \
+            --out /tmp/lab-art \
+            --trace /tmp/lab-trace.json \
+            --memory /tmp/lab-memory.sqlite3
+          python - <<'PY'
+          import json, pathlib
+          trace = json.loads(pathlib.Path("/tmp/lab-trace.json").read_text())
+          assert trace["backend"] == "playbook:network", trace["backend"]
+          assert trace["run_id"].startswith("lab-"), trace["run_id"]
+          endpoints = [f.get("endpoint") or "" for f in trace["findings"]]
+          assert any(e.startswith("127.0.0.1:") for e in endpoints), endpoints
+          assert trace["skipped"], "lab must disclose steps this host cannot run"
+          assert list(pathlib.Path("/tmp/lab-art").glob("report-*.md"))
+          print("lab ok:", len(trace["findings"]), "finding(s) on", endpoints)
+          PY
+
       - name: Refuse to run without scope
         run: |
           set +e
