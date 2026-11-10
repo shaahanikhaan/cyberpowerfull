@@ -10,7 +10,7 @@ CLI := $(BIN)/cyberpowerfull
 PORT ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help setup install install-dev lab doctor toolchain tools test lint fmt clean
+.PHONY: help setup install install-dev lab doctor toolchain tools test lint fmt clean docs release-check
 
 help: ## show this help
 	@printf 'cyberpowerfull\n\nusage: make <target>\n\n'
@@ -52,6 +52,13 @@ tools: ## install the scanner set on Debian/Kali (needs sudo; review first)
 		katana ffuf gobuster feroxbuster whatweb wafw00f nikto nuclei sqlmap dalfox \
 		arjun wpscan testssl.sh hydra exploitdb wordlists seclists
 	@echo "then: sudo nuclei -update-templates"
+
+docs: ## verify the documentation set (index, links, required files)
+	$(BIN)/python -m pytest tests/test_repository.py -q --no-cov
+	@echo "docs: index at docs/README.md"
+
+release-check: lint test ## verify version, changelog, badge, and tag consistency before tagging
+	$(BIN)/python scripts/release_check.py
 
 test: ## run the test suite with the coverage gate
 	$(BIN)/python -m pytest

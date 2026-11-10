@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v3.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify version, changelog, badge, and tag agree
+        run: |
+          python -m pip install --upgrade pip build
+          python scripts/release_check.py
+          version=$(python -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          test "v$version" = "$tag" || (echo "tag $tag does not match package version $version" && exit 1)
+
+      - name: Install and test the exact tree being released
+        run: |
+          python -m pip install -e ".[dev]"
+          ruff check .
+          black --check .
+          pytest --cov=cyberpowerfull --cov-report=term --cov-fail-under=70
+
+      - name: Build artefacts
+        run: python -m build
+
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: github release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          python - "$version" <<'PY'
+          import pathlib, re, sys
+          version = sys.argv[1]
+          text = pathlib.Path("CHANGELOG.md").read_text()
+          match = re.search(rf"^## \[{re.escape(version)}\].*?(?=^## \[)", text, re.S | re.M)
+          body = match.group(0).strip() if match else f"Release {version}. See CHANGELOG.md."
+          pathlib.Path("release-notes.md").write_text(body + "\n")
+          PY
+          cat release-notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release create "$tag" dist/* \
+            --title "$tag" \
+            --notes-file release-notes.md \
+            --verify-tag
