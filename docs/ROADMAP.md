@@ -12,11 +12,12 @@ every release; `CHANGELOG.md` records what actually landed.
 | 2.1.0 | Readiness and safety hardening | run-isolated SQLite, strict scope/DNS, bounded output, honest exit codes |
 | 3.0.0 | Depth | 26 tools, capability model, 6 playbooks, live inventory, offline knowledge, Strix/PentAGI/Sn1per |
 | 3.1.0 | Frictionless first run | `--lab`, `--init-scope`, `make`, installer, `cpf` |
-| 3.2.0 | Repository maturity | agent/maintainer docs, issue/PR templates, release + CodeQL workflows, doc-link tests |
+| 3.2.0 | Offline intelligence | advisory corpus + importers, version ranger, correlator, proof-only payload engine, native `http_probe`, bash toolkit |
+| 3.3.0 | Repository maturity | handoff/guide/roadmap docs, issue + PR templates, release + CodeQL workflows, doc/link/anchor tests |
 
 ## Next
 
-### 3.3.0 — Machine-readable results
+### 3.4.0 — Machine-readable results
 
 CI pipelines cannot consume Markdown. Strix ships `findings.sarif` and `run.json`; we should too.
 
@@ -29,7 +30,7 @@ CI pipelines cannot consume Markdown. Strix ships `findings.sarif` and `run.json
 - **`--format` flag** (`md`, `json`, `sarif`, `all`) instead of writing everything always.
   *Acceptance:* each format covered by a CLI test.
 
-### 3.4.0 — Parser conformance
+### 3.5.0 — Parser conformance
 
 The weakest honest claim today: parsers are unit-tested against fixtures, not real binary output.
 
@@ -41,13 +42,30 @@ The weakest honest claim today: parsers are unit-tested against fixtures, not re
 - **Drift alarm**: parser raises `ToolStatus.ERROR` with "unrecognised output" instead of silently
   returning zero findings when a known signature disappears.
 
-### 3.5.0 — Resumable and observable runs
+### 3.6.0 — Resumable and observable runs
 
 - **`--resume <run_id>`**: continue a playbook from recorded steps, skipping completed groups.
   Requires `trace.steps` to be sufficient (it is) and memory to be append-only (it is).
   *Acceptance:* kill mid-run in a test, resume, no duplicated findings.
 - **Progress event stream** (`--event-log path.jsonl`) so a UI or CI job can follow along.
 - **Per-tool timing table** in the report (already measured, currently only in the trace).
+
+### 3.7.0 — Intelligence that stays current
+
+The corpus is only as good as what the operator imported. Make that a first-class workflow.
+
+- **`--feed-cache DIR` + `--feed-refresh`**: import from a directory of already-downloaded feeds,
+  idempotently, with a manifest of what was imported when and a per-feed row audit.
+  *Acceptance:* importing the same feed twice changes no row and reports "0 changes".
+- **CPE quality report**: which correlated products lack a CPE mapping (`--intel-status --json`),
+  so curation effort goes where it pays. *Acceptance:* the report names at least the unmapped
+  products found in a fixture corpus.
+- **Correlation confidence calibration**: compare confidence against the payload/template
+  confirmation rate recorded in memory, and recalibrate the caps. *Acceptance:* a test corpus with
+  known answers whose confirmed-rate ordering matches the confidence ordering.
+- **Payload catalogue conformance**: every catalogue entry has an expected signal and a test that
+  the builder emits exactly one request. *Acceptance:* a test that fails when an entry is added
+  without a declared signal.
 
 ### 4.0.0 — Distribution
 
@@ -66,6 +84,8 @@ The weakest honest claim today: parsers are unit-tested against fixtures, not re
   that never writes secrets into traces.
 - **Nuclei template subsetting** from the inventory (only run templates whose tags match the
   fingerprinted tech) to cut scan time on big hosts.
+- **Template ↔ CVE bridging**: prefer a nuclei template whose id matches a correlated CVE, instead
+  of running the whole tag set.
 - **Model-agnostic structured decoding**: constrained JSON decoding for small local models, so a
   4B model can plan reliably without prompt gymnastics.
 - **Windows/AD playbook** with the same guardrails (currently AD coverage is a skill pack only).

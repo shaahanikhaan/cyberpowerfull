@@ -6,7 +6,7 @@ what the agent did matter more than feature count.
 ## Ground rules
 
 - Read [docs/HANDOFF.md §4](docs/HANDOFF.md#4-invariants-do-not-break-these).
-  The nine invariants are not negotiable; a PR that weakens one will be closed.
+  The ten invariants are not negotiable; a PR that weakens one will be closed.
 - No simulated behaviour. If a capability is unavailable (missing binary, missing capability,
   missing knowledge source), report it and skip — never fake a result, a fixture, or a finding.
 - One concern per PR. A new tool, a new playbook, and a refactor are three PRs.
@@ -34,7 +34,7 @@ managed — always work inside `.venv/`.
 | Subprocess | argv lists only, `shell=False`, sanitized env, bounded output — never `shell=True` |
 | Files | artefacts go through `storage.write_private_text` (owner-only) |
 | Logging | nothing on stdout except the documented CLI output; progress goes to stderr |
-| Tests | `pytest`; coverage gate 70% in `pyproject.toml`, currently ~88% (682 tests) |
+| Tests | `pytest`; coverage gate 70% in `pyproject.toml`, currently ~87% (788 tests) |
 
 ## Adding things
 

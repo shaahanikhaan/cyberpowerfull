@@ -182,10 +182,10 @@ cyberpowerfull --render-prompt --scope scope.json --target app.example.test | le
 
 ## 7. Tools, capabilities, and packets
 
-26 typed tools: `tcp_probe`, `subfinder`, `amass`, `dnsrecon`, `httpx`, `katana`, `wafw00f`,
-`nmap`, `masscan`, `naabu`, `whatweb`, `nikto`, `ffuf`, `gobuster`, `feroxbuster`, `arjun`,
-`testssl`, `wpscan`, `nuclei`, `sqlmap`, `dalfox`, `searchsploit`, `hydra`, `strix`, `pentagi`,
-`sn1per`. List them with their install state:
+29 typed tools: `tcp_probe`, `http_probe`, `subfinder`, `amass`, `dnsrecon`, `httpx`, `katana`,
+`wafw00f`, `nmap`, `masscan`, `naabu`, `whatweb`, `nikto`, `ffuf`, `gobuster`, `feroxbuster`,
+`arjun`, `testssl`, `wpscan`, `nuclei`, `sqlmap`, `dalfox`, `payload`, `cve_correlate`,
+`searchsploit`, `hydra`, `strix`, `pentagi`, `sn1per`. List them with their install state:
 
 ```bash
 cyberpowerfull --list-tools
@@ -202,6 +202,45 @@ Capability gate — a tool that needs a capability is blocked before its argv is
 
 Rate and volume: `max_rps` is translated into `--delay`/`--rate`/`-Pause` where the tool supports it.
 It is a hint, not a traffic shaper — put an egress rule in place if the engagement requires one.
+
+### Offline CVE intelligence and proof payloads
+
+The intel layer never calls the network: you import feeds you fetched yourself, and the agent
+correlates them against versions that real tool output reported.
+
+```bash
+# 1. import advisories (NVD 2.0, NVD 1.1, CISA KEV, or the native format)
+cyberpowerfull --import-feed nvd-2026.json --import-feed kev.json
+cyberpowerfull --intel-status                  # counts, years, KEV entries, severities
+cyberpowerfull --intel-status --json           # same, machine-readable
+
+# 2. correlate observed components (unverified candidates, never claims)
+cyberpowerfull --correlate 'log4j=2.14.1;openssh=9.6p1' --target 127.0.0.1
+cyberpowerfull --correlate 'openssh=9.6p1' --min-cvss 7 --json
+
+# 3. build proof vectors, then deliver exactly one request
+cyberpowerfull --payload xss --target 'http://127.0.0.1:8080/search'
+cyberpowerfull --payload sqli --payload-param q --payload-ids 'sqli-001,sqli-004'
+cyberpowerfull --http-probe 'http://127.0.0.1:8080/search?q=cpf7391' --probe-marker cpf7391
+```
+
+What the pieces are:
+
+| Piece | Behaviour |
+|---|---|
+| Corpus (`--intel-store PATH`) | SQLite; merge-on-import keeps the highest CVSS/severity, ORs KEV, unions references; a curated 12-advisory snapshot ships so a fresh install is not empty |
+| Version ranger | dependency-free comparison that understands `2.4.49`, `9.6p1`, `2.0-beta9`, and `introduced`/`fixed`/`last_affected`/`exact` ranges |
+| Correlation | product/version pairs from real tool output; confidence + rationale per match; unversioned components are severity-capped; always `verified=False` until local evidence confirms |
+| Payload catalogue | 55 proof-only entries across 14 skills; each proves a signal (arithmetic, timing, reflection, entity expansion, trust-flag change); destructive templates are refused before a request is built |
+| `http_probe` | native HTTP client for a single proof request or marker check; no binary needed |
+
+Bash entry points with the same scope engine (all require `--scope`):
+
+```bash
+tools/bash/cve_hunt.sh --scope scope.json --target 127.0.0.1
+tools/bash/payload_run.sh --scope scope.json --target 'http://127.0.0.1:8080/search'
+tools/bash/scan_cycle.sh --scope scope.json --target 127.0.0.1   # first pass + Markdown summary
+```
 
 ## 8. Reading the results
 
@@ -246,6 +285,9 @@ provider. If the agreement forbids that, do not grant the capability — playboo
 | "binary not installed: X" | `make tools`, or check `make toolchain` for the package name |
 | "wordlist ... not found" | install `seclists`/`wordlists`, or set `allowed_wordlists` |
 | "no free lab port" | something is on 8080/8443/9200/27017/6379/5900/8008; `--lab-port` |
+| `--correlate` finds nothing | the corpus has no matching advisory, or the product name differs; check `--intel-status` and import a current feed |
+| `--intel-status` shows the bundled snapshot only | no feed imported yet; `--import-feed nvd-*.json` (the file must already be on disk — the agent never fetches) |
+| payload refused | the template would modify state; proof-only templates are the only ones the builder emits |
 | lab finds nothing | nothing is listening on the swept ports; run `make lab` itself to prove the path |
 | slow run | lower `--max-steps`, use `--playbook stealth`, or raise `--parallel` |
 
@@ -270,7 +312,12 @@ cyberpowerfull --scope scope.json --target staging.acme.test --playbook stealth 
 # D. Rehearse everything before touching the target
 cyberpowerfull --scope scope.json --target app.acme.test --playbook full --dry-run
 
-# E. Give the model the loop, bounded
+# E. Offline intel: correlate a version you just observed, then prove it
+cyberpowerfull --import-feed nvd-2026.json
+cyberpowerfull --correlate 'openssh=9.6p1' --target 127.0.0.1 --min-cvss 7
+cyberpowerfull --payload xss --target 'http://127.0.0.1:8080/search'
+
+# F. Give the model the loop, bounded
 cyberpowerfull --scope scope.json --target app.acme.test --llm ollama:qwen3:4b \
   --max-iterations 8 --max-seconds 600
 ```

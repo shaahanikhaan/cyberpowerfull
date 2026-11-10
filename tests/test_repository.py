@@ -221,6 +221,8 @@ class TestHandoffAndRoadmap:
             "Capability gate before argv",
             "Loopback-only inference",
             "Append-only memory",
+            "Offline intelligence",
+            "Honest reporting",
             "Exit-code contract",
             "SQLite is thread-bound",
             "Release checklist",
@@ -233,6 +235,12 @@ class TestHandoffAndRoadmap:
         for module in ("cli.py", "lab.py", "playbook.py", "inventory.py", "scope.py", "trace.py"):
             assert (package / module).is_file()
             assert module in text, f"{module} missing from the handoff map"
+        for package_dir in ("intel", "payloads"):
+            assert (package / package_dir).is_dir()
+            assert package_dir in text, f"{package_dir}/ missing from the handoff map"
+        for module in ("http_probe.py", "payload.py", "cve_correlate.py"):
+            assert (package / "tools" / module).is_file()
+            assert module in text, f"tools/{module} missing from the handoff map"
 
     def test_roadmap_has_shipped_and_next_sections(self) -> None:
         text = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
@@ -266,6 +274,11 @@ class TestUserGuide:
             "--dry-run",
             "--render-prompt",
             "--agents",
+            "--import-feed",
+            "--intel-status",
+            "--correlate",
+            "--payload",
+            "--http-probe",
         ],
     )
     def test_guide_documents_every_user_facing_command(self, command: str) -> None:

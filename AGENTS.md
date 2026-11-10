@@ -17,6 +17,15 @@ make doctor                   # what this host can actually run
 make toolchain                # live inventory with install hints
 ```
 
+Offline intelligence (no network call by the agent; you import feeds you fetched):
+
+```bash
+cyberpowerfull --import-feed nvd-2026.json
+cyberpowerfull --intel-status
+cyberpowerfull --correlate 'openssh=9.6p1' --target 127.0.0.1
+cyberpowerfull --payload xss --target 'http://127.0.0.1:8080/search'
+```
+
 For a real engagement, a scope file is mandatory — the agent exits `3` without one:
 
 ```bash
@@ -42,10 +51,10 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 make lint        # ruff + black --check
 make docs        # doc links, required files, templates
 make release-check  # version + changelog + badge + tag consistency
-make test        # 682 tests, 70% coverage gate (currently ~88%)
+make test        # 788 tests, 70% coverage gate (currently ~87%)
 ```
 
-Nine invariants must survive any change: no-scope-no-run, per-call scope re-validation, capability
+Ten invariants must survive any change: no-scope-no-run, per-call scope re-validation, capability
 gate before argv, loopback-only inference, append-only memory, no shell, proof-only exploitation,
 honest reporting of skips/failures, and the exit-code contract. They are spelled out in
 [docs/HANDOFF.md §4](docs/HANDOFF.md#4-invariants-do-not-break-these).
