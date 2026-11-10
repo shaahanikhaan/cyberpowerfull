@@ -489,7 +489,10 @@ class TestRegistry:
         from cyberpowerfull.errors import ToolNotFound
 
         with pytest.raises(ToolNotFound):
-            get_tool("metasploit")
+            get_tool("definitely_not_a_tool")
+
+    def test_metasploit_registered(self) -> None:
+        assert get_tool("metasploit").name == "metasploit"
 
     def test_catalog_contains_schema(self) -> None:
         entries = {entry["name"]: entry for entry in catalog()}
