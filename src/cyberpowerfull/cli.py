@@ -42,11 +42,15 @@ DESCRIPTION = (
     "Runs recon -> scanning -> validation -> reporting against an authorized target "
     "using a local open-weight model (Ollama / llama.cpp), or a deterministic "
     "multi-tool playbook when no model is available. No chat mode. No cloud inference.\n"
-    "First run: 'cyberpowerfull --lab' starts a loopback service and scans it."
+    "Simplest use: 'cpf TARGET' — one command, no configuration, no scope file to write."
 )
 
 EPILOG = """\
 examples:
+  cpf example.com                              # one command: scope, profile, scan, report
+  cpf https://app.example.com --profile deep   # standard plan with a two-hour budget
+  cpf example.com --plan                       # show what it would do, run nothing
+  cpf 127.0.0.1 --i-am-authorized              # non-interactive attestation
   cyberpowerfull --scope scope.json --target 127.0.0.1
   cyberpowerfull --scope scope.json --target lab.internal --llm ollama:qwen3:4b --max-iterations 20
   cyberpowerfull --scope scope.json --target lab.internal --playbook full --parallel 4
@@ -99,7 +103,63 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="engagement scope file (default: $CYBERPOWERFULL_SCOPE or scope.json)",
     )
+    parser.add_argument(
+        "positional_target",
+        nargs="?",
+        metavar="TARGET",
+        help=(
+            "host or URL to test (one-command mode: derives the scope file, picks the profile, "
+            "runs, and writes the report)"
+        ),
+    )
     parser.add_argument("--target", metavar="HOST", help="authorized target host or URL")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        choices=["quick", "standard", "deep"],
+        help="one-command mode: how far to go (default: standard)",
+    )
+    parser.add_argument(
+        "--i-am-authorized",
+        dest="i_am_authorized",
+        action="store_true",
+        help=(
+            "one-command mode: attest that you own the target or hold written permission. "
+            "Required when no scope file exists and stdin is not a terminal"
+        ),
+    )
+    parser.add_argument(
+        "--authorization-ref",
+        metavar="REF",
+        help="one-command mode: written authorization reference to record in the scope file",
+    )
+    parser.add_argument(
+        "--scope-dir",
+        default="engagements",
+        metavar="DIR",
+        help="one-command mode: where auto-created scope files live (default: engagements)",
+    )
+    parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="one-command mode: print the plan and exit without sending a single request",
+    )
+    parser.add_argument(
+        "--polite",
+        action="store_true",
+        help="one-command mode: do not grant the 'aggressive' capability (no high-rate scans)",
+    )
+    parser.add_argument(
+        "--with-credentials",
+        dest="with_credentials",
+        action="store_true",
+        help="one-command mode: also grant 'credential_testing' (hydra steps become eligible)",
+    )
+    parser.add_argument(
+        "--ai",
+        action="store_true",
+        help="one-command mode: use the local model loop instead of the deterministic playbook",
+    )
     parser.add_argument(
         "--llm",
         default=None,
@@ -310,11 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="comma-separated targets for --init-scope (e.g. app.example.test,10.0.0.5)",
     )
     parser.add_argument("--engagement", metavar="NAME", help="engagement name for --init-scope")
-    parser.add_argument(
-        "--authorization-ref",
-        metavar="REF",
-        help="written authorization reference for --init-scope (e.g. 'SOW-2026-014')",
-    )
+    # --authorization-ref is declared once, above, and serves both modes.
     parser.add_argument(
         "--capabilities",
         metavar="LIST",
@@ -370,6 +426,7 @@ def _env_positive_int(parser: argparse.ArgumentParser, name: str, fallback: int)
 def _apply_environment(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     """Resolve unset flags from the environment, validating only values actually used."""
     defaults = RunConfig()
+    args.scope_explicit = args.scope is not None or "CYBERPOWERFULL_SCOPE" in os.environ
     if args.scope is None:
         args.scope = os.environ.get("CYBERPOWERFULL_SCOPE", "scope.json")
     if args.llm is None:
@@ -1010,6 +1067,221 @@ def _init_scope(parser: argparse.ArgumentParser, args: argparse.Namespace) -> in
     return 0
 
 
+def _attestation(host: str, *, interactive: bool) -> bool:
+    """Ask the operator, in plain words, to attest authorization.
+
+    Nothing is written and nothing is scanned unless this returns True. The phrase has to be
+    typed: a stray Enter is not an attestation.
+    """
+    if not interactive:
+        return False
+    print("")
+    print("  authorization")
+    print(f"    target: {host}")
+    print("    Only test systems you own or have written permission to test.")
+    print("    This tool cannot verify that permission. It records your claim in the scope file")
+    print("    so the run is auditable, and it will never widen an existing scope on its own.")
+    print("")
+    try:
+        answer = input("    type 'yes' to confirm you are authorized to test this target: ")
+    except EOFError:  # pragma: no cover - closed stdin
+        return False
+    return answer.strip().lower() in {"yes", "y"}
+
+
+def _install_hint_command() -> str:
+    """The honest install hint for wherever the operator actually is."""
+    if Path("run.sh").is_file():
+        return "./run.sh --install-tools"
+    if Path("scripts/install.sh").is_file():
+        return "./scripts/install.sh --with-tools"
+    return "install nmap, nuclei and httpx with your package manager, then re-run"
+
+
+def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
+    """``cpf TARGET``: derive everything, run the playbook, explain the result."""
+    from cyberpowerfull.onepass import (
+        default_scope_path,
+        ensure_scope,
+        next_steps,
+        profile_for,
+        render_plan,
+        step_line,
+        target_host,
+    )
+
+    profile = profile_for(args.profile)
+    host = target_host(raw_target)
+    if args.scope_explicit:
+        scope_path = Path(args.scope)
+    else:
+        scope_path = default_scope_path(host, args.scope_dir)
+
+    interactive = not args.quiet and sys.stdin.isatty()
+    scope, path, created = ensure_scope(
+        target=raw_target,
+        scope_path=scope_path,
+        attest=lambda h: bool(args.i_am_authorized) or _attestation(h, interactive=interactive),
+        authorization_ref=args.authorization_ref,
+        aggressive=not args.polite,
+        credentials=args.with_credentials,
+    )
+
+    cfg = RunConfig(
+        scope_path=path,
+        target=raw_target,
+        llm_spec=args.llm or f"ollama:{DEFAULT_MODEL}",
+        max_iterations=args.max_iterations,
+        max_tokens=args.max_tokens,
+        max_seconds=args.max_seconds,
+        out_dir=Path(args.out),
+        memory_path=Path(args.memory),
+        trace_path=Path(args.trace),
+        dry_run=args.dry_run,
+    )
+    cfg.ensure_dirs()
+
+    if not args.quiet:
+        print("")
+        for line in render_plan(
+            target=raw_target,
+            host=host,
+            profile=profile,
+            scope=scope,
+            scope_path=path,
+            created=created,
+            out_dir=cfg.out_dir,
+            aggressive=not args.polite,
+        ):
+            print(f"  {line}")
+        print("")
+
+    if args.plan:
+        print("  --plan: nothing was sent. re-run without --plan to execute.")
+        return 0
+
+    if args.ai:
+        # Same scope, same guardrails, model-chosen steps instead of the playbook.
+        args.scope = str(path)
+        args.target = raw_target
+        if args.max_seconds is None:
+            args.max_seconds = profile.max_seconds
+        return _run(args)
+
+    playbook = get_playbook(profile.playbook)
+    run_id = new_id("cpf-")
+    total = len(playbook.steps)
+    counter = {"n": 0}
+
+    def progress(record: StepRecord) -> None:
+        counter["n"] += 1
+        print(f"  {step_line(record, index=counter['n'], total=total)}", file=sys.stderr)
+
+    with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
+        runner = PlaybookRunner(
+            scope=scope,
+            target=raw_target,
+            memory=memory,
+            dry_run=cfg.dry_run,
+            max_seconds=args.max_seconds or profile.max_seconds,
+            max_steps=args.max_steps,
+            parallel=args.parallel or profile.parallel,
+            run_id=run_id,
+        )
+        if not args.quiet:
+            print(
+                f"  running playbook '{playbook.name}' against {raw_target} "
+                f"({total} planned steps)",
+                file=sys.stderr,
+            )
+        result = runner.run(playbook, progress=None if args.quiet else progress)
+
+    trace = result.trace
+    trace_path = save_trace(trace, cfg.trace_path)
+    paths = write_reports(trace, cfg.out_dir)
+    if args.json:
+        print(trace.model_dump_json(indent=2))
+    else:
+        summary = summarize_trace(trace)
+        counts = summary["severity_counts"]
+        breakdown = ", ".join(
+            f"{counts[level]} {level}"
+            for level in ["critical", "high", "medium", "low", "info"]
+            if counts.get(level)
+        )
+        print("")
+        print("RESULT")
+        print(f"  target     {trace.target}")
+        print(f"  engagement {trace.engagement}")
+        print(f"  ran        {len(trace.steps)} step(s), {len(result.skipped)} skipped")
+        print(
+            f"  findings   {summary['findings']}"
+            + (f" ({breakdown})" if breakdown else "")
+            + f", verified {summary['verified_findings']}"
+        )
+        print(f"  trace      {trace_path}")
+        print(f"  report     {paths['report']}")
+        print(f"  sarif      {paths['sarif']}   (GitHub code scanning / any SARIF viewer)")
+        print(f"  manifest   {paths['run']}")
+        if result.skipped:
+            print(f"  note       {len(result.skipped)} step(s) did not run; reasons:")
+            for line in result.skipped[:6]:
+                print(f"             - {line}")
+            if len(result.skipped) > 6:
+                print(f"             - ... {len(result.skipped) - 6} more in the trace")
+        findings = trace.sorted_findings()
+        print("")
+        print("WHAT I FOUND")
+        if findings:
+            for finding in findings[:5]:
+                print(
+                    f"  {finding.severity.value.upper():<8} {finding.title[:100]} "
+                    f"(confidence {finding.confidence:.2f}, verified="
+                    f"{'yes' if finding.verified else 'no'})"
+                )
+            if len(findings) > 5:
+                print(f"  ... {len(findings) - 5} more in the report")
+        else:
+            print("  nothing: this tool set produced no finding against this target")
+        print("")
+        print("NEXT STEPS")
+        for index, line in enumerate(
+            next_steps(
+                trace=trace,
+                report_path=paths["report"],
+                skipped=result.skipped,
+                install_hint_cmd=_install_hint_command(),
+            ),
+            start=1,
+        ):
+            print(f"  {index}. {line}")
+        print("")
+    return _run_exit_code(trace)
+
+
+def _quickstart() -> int:
+    """What a person sees when they type the command with no arguments."""
+    print("cpf - local autonomous pentest agent")
+    print("")
+    print("  simplest use, one command, nothing to configure:")
+    print("")
+    print("    cpf example.com                 # or https://example.com")
+    print("    cpf example.com --profile deep  # longer, wider pass")
+    print("    cpf example.com --plan          # show the plan, send nothing")
+    print("")
+    print("  You will be asked once, in the terminal, to confirm you are authorized to test")
+    print("  the target. Non-interactive (CI, cron): add --i-am-authorized.")
+    print("")
+    print("  no target and no idea what this host can do:")
+    print("")
+    print("    cpf --lab          # real loopback service, scanned end to end, no setup")
+    print("    cpf --doctor       # what is installed here and what is missing")
+    print("    cpf --toolchain    # live inventory of the pentest tools on this machine")
+    print("")
+    print("  everything else: cpf --help")
+    return 2
+
+
 def _run_lab(args: argparse.Namespace) -> int:
     """Serve a real loopback page and scan it, so a first run needs no setup."""
     from cyberpowerfull.config import RunConfig
@@ -1078,11 +1350,10 @@ def _run_lab(args: argparse.Namespace) -> int:
             for line in result.skipped[:6]:
                 print(f"  - {line}")
         print("")
-        print("next: scan the thing you are authorized to test, e.g.")
-        print(
-            "  cyberpowerfull --init-scope scope.json --engagement NAME --targets HOST "
-            "--authorize --authorization-ref REF"
-        )
+        print("next: scan the thing you are authorized to test:")
+        print("  cpf HOST  (you will be asked once, in the terminal, to confirm authorization)")
+        print("manual route: cyberpowerfull --init-scope scope.json --engagement NAME \\")
+        print("  --targets HOST --authorize --authorization-ref REF, then")
         print("  cyberpowerfull --scope scope.json --target HOST --playbook recon")
     return _run_exit_code(result.trace)
 
@@ -1119,6 +1390,10 @@ def main(argv: list[str] | None = None) -> int:
             return _intel(args)
         if args.init_scope:
             return _init_scope(parser, args)
+        if args.positional_target:
+            if args.target and args.target != args.positional_target:
+                parser.error("give the target once: either 'cpf TARGET' or '--target TARGET'")
+            return _one_pass(args, args.positional_target)
         if args.doctor:
             return _doctor(args)
         if args.lab:
@@ -1134,7 +1409,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.render_prompt:
             return _render_prompt(args)
         if not args.target:
-            parser.error("--target is required (or use --replay, --check, --list-tools)")
+            if args.scope_explicit:
+                # An operator who named a scope file meant to run: tell them what is missing.
+                parser.error("--target is required (or pass it positionally: 'cpf TARGET')")
+            return _quickstart()
         return _run(args)
     except KeyboardInterrupt:  # pragma: no cover - interactive only
         print("interrupted", file=sys.stderr)

@@ -4,7 +4,60 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.2.0] — Repository maturity
+## [4.0.0] — One command
+
+The first run is now one line: `cpf TARGET` (or `./run.sh TARGET` straight after cloning).
+The target is the only required input; the scope file, the playbook choice, the budgets, and
+the report are all derived from it, and everything the run did is explained back in plain
+language. The guardrails did not move: the new mode writes an authorized scope only after an
+explicit, recorded attestation, and it refuses to run — unchanged — without one.
+
+### Added
+
+- **One-command mode (`cpf TARGET`)**: the positional target is reduced to a scopeable host,
+  an engagement scope is loaded or created under `engagements/`, a profile is run, and the
+  result is printed as `RESULT` / `WHAT I FOUND` / `NEXT STEPS` in plain words. New module
+  `src/cyberpowerfull/onepass.py`; no target and no explicit scope flag prints a quickstart
+  and exits 2.
+- **Profiles**: `--profile quick|standard|deep` pick a real playbook plus time/parallelism
+  budgets (`recon`/10 min/2, `full`/30 min/3, `full`/2 h/4). `--polite` shrinks the footprint
+  further; `--plan` prints what would run and sends nothing.
+- **Recorded authorization**: `--i-am-authorized` (optionally `--authorization-ref REF`), or a
+  typed `yes` at an interactive prompt that says exactly what permission is being claimed. The
+  claim is stored in the scope's `authorization_ref` and `notes`; a non-interactive run without
+  the flag fails closed with exit 3, and an existing scope is never widened (out-of-scope host
+  is an error, not a merge).
+- **`./run.sh`**: zero-setup wrapper for a fresh clone — creates `.venv`, installs the package
+  editable, then runs `cpf`. `./run.sh TARGET`, `./run.sh --lab`, `./run.sh --doctor`.
+- **SARIF 2.1.0 export**: every run writes `artifacts/findings-<run_id>.sarif` (one rule per
+  skill/CVE/CWE, severity mapped to SARIF level, `verified` carried in rule properties,
+  skipped steps as execution notifications).
+- **Run manifest**: every run writes `artifacts/run-<run_id>.json` (`schema:
+  cyberpowerfull.run/1`) with per-step status, tool status counts, budget, skip reasons,
+  verified findings, and artifact paths.
+- **`tests/test_onepass.py`** (48 tests): host reduction, profile mapping, scope creation that
+  never happens without attestation and never widens an existing scope, `--plan` silence,
+  CLI exit codes, SARIF/manifest shape, and the four-artefact dry run.
+
+### Changed
+
+- The end-of-run summary is a scannable `RESULT` block (target, engagement, ran/skipped
+  counts, severity breakdown, verified count, trace/report/SARIF/manifest paths, up to six
+  skip reasons) followed by findings and concrete next steps derived from the run itself.
+- `write_reports()` now returns `{report, findings, sarif, run}` and writes all four files.
+- `scripts/install.sh` and the README/GUIDE lead with the one-command path; the manual
+  `--init-scope` → `--playbook` route is unchanged and still documented underneath.
+- `docs/HANDOFF.md` documents the one-command layering and a new second invariant
+  ("Attested, never assumed"); the suite is at 831 passed, 3 skipped, 87%.
+
+### Fixed
+
+- `pyproject.toml` carried a duplicate `description` key (a merge artefact) that broke
+  `pip install -e .` with `TOMLDecodeError`; packaging now parses and installs cleanly.
+- `docs/HANDOFF.md` and `docs/ROADMAP.md` version history now matches the real release
+  sequence (3.2.0 offline intelligence, 3.3.0 repository maturity).
+
+## [3.3.0] — Repository maturity
 
 The code did not change much in this release; the repository around it did. A tool people cannot
 audit, extend, or release cleanly is not a professional tool.
@@ -51,6 +104,9 @@ audit, extend, or release cleanly is not a professional tool.
 
 - No behaviour change to the agent, the guardrails, or the artefacts. Everything in
   `docs/HANDOFF.md §4` still holds, and the tests that enforce it are unchanged.
+- Numbering: 3.2.0 shipped offline intelligence upstream at the same time this documentation
+  release was prepared, so the docs release is 3.3.0. It merged into `main` labelled 3.2.0; the
+  heading here is the correct number.
 
 ## [3.2.0] — Offline CVE intelligence and proof-only payloads
 
