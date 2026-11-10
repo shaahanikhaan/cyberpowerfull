@@ -1,7 +1,6 @@
-# Requirements for cyberpowerfull (POWERFULL Phase - Recon + Scanner)
-# English & Roman Urdu support
-# English: Includes POWERFULL new vulnerability discovery beyond known CVEs
-# Roman Urdu: POWERFULL nayi vulnerability discovery shamil hai jo pehle se maloom CVEs se aage hai (POWERFULL nayi vulnerability discovery shamil hai jo pehle se maloom CVEs se aage hai)
+# Requirements for cyberpowerfull (POWERFULL Phase - Recon + Scanner + Gap 6 & 7)
+# English: Includes POWERFULL new vulnerability discovery beyond known CVEs + Kali 2026.3 tools + 2026 AI-Driven Integration
+# Roman Urdu: POWERFULL nayi vulnerability discovery shamil hai jo pehle se maloom CVEs se aage hai + Kali 2026.3 tools + 2026 AI-Driven Integration (POWERFULL nayi vulnerability discovery shamil hai jo pehle se maloom CVEs se aage hai + Kali 2026.3 tools + 2026 AI-Driven Integration)
 
 # Recon tools (Recon ke tools)
 nmap>=7.95
@@ -13,19 +12,21 @@ httpx>=1.0.0
 naabu>=1.0.0
 python-whois>=0.9.0
 scapy>=2.5.0
-dalfox>=2.0.0  # Kali 2026.3
-katana>=1.0.0  # Kali 2026.3
-qsreplace>=1.0.0  # Kali 2026.3
-snaffler-ng>=1.0.0  # Kali 2026.3
+dalfox>=2.0.0  # Kali 2026.3 (Gap 6)
+katana>=1.0.0  # Kali 2026.3 (Gap 6)
+qsreplace>=1.0.0  # Kali 2026.3 (Gap 6)
+rustscan>=2.0.0  # Kali 2026.3 (Gap 6)
+sdrangel>=1.0.0  # Kali 2026.3 (Gap 6)
+snaffler-ng>=1.0.0  # Kali 2026.3 (Gap 6)
 origin-ip-bypass>=1.0.0  # Open source
 evilwaf>=1.0.0  # Open source
 waffled>=1.0.0  # Open source
 
 # Web tools (Web ke tools)
 sqlmap>=1.7.0
-dalfox>=2.0.0  # Kali 2026.3
-katana>=1.0.0  # Kali 2026.3
-qsreplace>=1.0.0  # Kali 2026.3
+dalfox>=2.0.0  # Kali 2026.3 (Gap 6)
+katana>=1.0.0  # Kali 2026.3 (Gap 6)
+qsreplace>=1.0.0  # Kali 2026.3 (Gap 6)
 nikto>=2.5.0
 dirb>=2.0.0
 ffuf>=1.0.0
@@ -54,13 +55,13 @@ wpprobe>=1.0.0  # Kali 2026.1
 hydra>=9.0.0
 john>=1.9.0
 hashcat>=6.2.0
-snaffler-ng>=1.0.0  # Kali 2026.3
+snaffler-ng>=1.0.0  # Kali 2026.3 (Gap 6)
 
 # Wireless (Wireless)
 aircrack-ng>=1.7.0
 wifite2>=2.0.0
 fluxion>=1.0.0  # Kali 2026.1
-sdrangel>=1.0.0  # Kali 2026.3
+sdrangel>=1.0.0  # Kali 2026.3 (Gap 6)
 
 # AI & Automation Agents (AI & Automation Agents)
 pentagi>=1.0.0  # Open source
@@ -76,13 +77,13 @@ kali-ai-security-toolkit>=1.0.0  # Open source
 # POWERFULL New Vulnerability Discovery (Beyond Known CVEs)
 # English: Deep research-based discovery tools (2026 AI-driven methods)
 # Roman Urdu: Deep research-based discovery tools (2026 AI-driven methods) (Deep research-based discovery tools (2026 AI-driven methods))
-anthropic-mythos-api>=1.0.0  # 2026 AI-driven CVE discovery
-google-big-sleep>=1.0.0  # 2026 AI agent discovery
-depthfirst-agent>=1.0.0  # 2026 autonomous discovery
-aisle-ai-system>=1.0.0  # 2026 zero-day discovery
-cnn-ocsvm-framework>=1.0.0  # 2026 behavioral analysis
-semantic-code-analyzer>=1.0.0  # 2026 semantic scanning
-structural-pattern-matcher>=1.0.0  # 2026 pattern matching
+anthropic-mythos-api>=1.0.0  # 2026 AI-driven CVE discovery (Gap 7)
+google-big-sleep>=1.0.0  # 2026 AI agent discovery (Gap 7)
+depthfirst-agent>=1.0.0  # 2026 autonomous discovery (Gap 7)
+aisle-ai-system>=1.0.0  # 2026 zero-day discovery (Gap 7)
+cnn-ocsvm-framework>=1.0.0  # 2026 behavioral analysis (Gap 7)
+semantic-code-analyzer>=1.0.0  # 2026 semantic scanning (Gap 7)
+structural-pattern-matcher>=1.0.0  # 2026 pattern matching (Gap 7)
 
 # Framework (Framework)
 pyyaml>=6.0.0

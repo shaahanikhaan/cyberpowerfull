@@ -1,6 +1,6 @@
-# Configuration for cyberpowerfull (10-Hour Powerfull Phase)
-# English: Configuration for Recon + POWERFULL New Vulnerability Discovery (Beyond Known CVEs)
-# Roman Urdu: Recon + POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage) ke liye configuration (Recon + POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage) ke liye configuration)
+# Configuration for cyberpowerfull (10-Hour Powerfull Phase + Gap 6 & 7)
+# English: Configuration for Recon + POWERFULL New Vulnerability Discovery (Beyond Known CVEs) + Kali 2026.3 Automation + 2026 AI-Driven Integration
+# Roman Urdu: Recon + POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage) + Kali 2026.3 Automation + 2026 AI-Driven Integration ke liye configuration (Recon + POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage) + Kali 2026.3 Automation + 2026 AI-Driven Integration ke liye configuration)
 
 language: english
 output_format: json
@@ -13,23 +13,25 @@ recon:
   subdomain_depth: 3
   waf_bypass_enabled: true
   ai_agent_integration: true
+  kali20263_automation: true  # NEW: Gap 6 - Kali 2026.3 tools automation
 
-# English: Scanner configuration (NEW - Recon first, then POWERFULL discovery)
-# Roman Urdu: Scanner configuration (NEW - Recon pehle, phir POWERFULL discovery) (Scanner configuration (NEW - Recon pehle, phir POWERFULL discovery))
+# English: Scanner configuration (NEW - Recon first, then POWERFULL discovery + AI integration)
+# Roman Urdu: Scanner configuration (NEW - Recon pehle, phir POWERFULL discovery + AI integration) (Scanner configuration (NEW - Recon pehle, phir POWERFULL discovery + AI integration))
 scanner:
   cve_only: false  # English: Not limited to known CVEs | Roman Urdu: Sirf pehle se maloom CVEs tak limited nahi (Sirf pehle se maloom CVEs tak limited nahi)
   deep_research: true  # English: 2026 AI-driven CVE discovery research | Roman Urdu: 2026 AI-driven CVE discovery research (2026 AI-driven CVE discovery research)
   powerfull_tools: true  # English: POWERFULL new vulnerability discovery tools | Roman Urdu: POWERFULL nayi vulnerability discovery tools (POWERFULL nayi vulnerability discovery tools)
   recon_first: true  # English: Recon phase first, then scanner | Roman Urdu: Recon phase pehle, phir scanner (Recon phase pehle, phir scanner)
+  aidriven_integration: true  # NEW: Gap 7 - 2026 AI-Driven CVE Integration
 
-# English: 10-Hour Powerfull Phase Design
-# Roman Urdu: 10-Hour Powerfull Phase Design (10-Hour Powerfull Phase Design)
+# English: 10-Hour Powerfull Phase Design (Extended to 7 Gaps)
+# Roman Urdu: 10-Hour Powerfull Phase Design (7 Gaps tak extended) (10-Hour Powerfull Phase Design (7 Gaps tak extended))
 powerfull_phase:
   duration_per_phase: 2  # Hours per phase
   total_phases: 5
   phase1_research: true
   phase2_integration: true
-  phase3_custom_gaps: true
+  phase3_custom_gaps: true  # Now includes Gap 6 & 7
   phase4_execution: true
   phase5_reporting: true
 
@@ -81,3 +83,9 @@ new_vuln_discovery:
     - ai_agent_zero_day
     - structural_pattern_matcher
   beyond_known_cves: true  # English: Not limited to known CVE databases | Roman Urdu: Sirf pehle se maloom CVE databases tak limited nahi (Sirf pehle se maloom CVE databases tak limited nahi)
+
+# English: NEW Gaps Configuration
+# Roman Urdu: Naye Gaps Configuration (Naye Gaps Configuration)
+new_gaps:
+  gap6_kali20263_automation: true  # English: Kali Linux 2026.3 tool automation (Dalfox, Katana, Qsreplace, Rustscan, SDRangel, Snaffler-ng) | Roman Urdu: Kali Linux 2026.3 tool automation (Dalfox, Katana, Qsreplace, Rustscan, SDRangel, Snaffler-ng)
+  gap7_aidriven_integration: true  # English: 2026 AI-Driven CVE Integration (Mythos, Big Sleep, depthfirst, AISLE, CNN+OC-SVM, Semantic) | Roman Urdu: 2026 AI-Driven CVE Integration (Mythos, Big Sleep, depthfirst, AISLE, CNN+OC-SVM, Semantic)
