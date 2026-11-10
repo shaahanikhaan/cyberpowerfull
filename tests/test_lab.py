@@ -311,6 +311,10 @@ class TestProjectEntrypoints:
         assert "--with-tools" in body
         assert "-m venv" in body
         assert "--lab" in body
+        # One unknown package must not abort the whole set; msfconsole's
+        # package must be in the set.
+        assert "for pkg in" in body
+        assert "metasploit-framework" in body
 
     def test_console_scripts(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()

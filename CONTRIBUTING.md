@@ -34,7 +34,7 @@ managed — always work inside `.venv/`.
 | Subprocess | argv lists only, `shell=False`, sanitized env, bounded output — never `shell=True` |
 | Files | artefacts go through `storage.write_private_text` (owner-only) |
 | Logging | nothing on stdout except the documented CLI output; progress goes to stderr |
-| Tests | `pytest` (plain run works with just `pytest` installed); coverage gate 70% enforced by `make test` and CI, currently ~84% (876 tests) |
+| Tests | `pytest` (plain run works with just `pytest` installed); coverage gate 70% enforced by `make test` and CI, currently ~84% (879 tests) |
 
 ## Adding things
 

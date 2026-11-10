@@ -591,18 +591,18 @@ def _check(args: argparse.Namespace) -> int:
 
     missing: list[str] = []
     for tool in catalog():
-        if tool["installed"]:
-            label = (
-                "ready (native)"
-                if tool["binary"] == "native"
-                else "found on PATH (not version-checked)"
-            )
-            print(f"tool: {tool['name']:<12} {label} ({tool['binary']})")
-        else:
+        if not tool["installed"]:
             missing.append(tool["name"])
-            print(f"tool: {tool['name']:<12} MISSING binary ({tool['binary']})")
+            continue
+        label = (
+            "ready (native)"
+            if tool["binary"] == "native"
+            else "found on PATH (not version-checked)"
+        )
+        print(f"tool: {tool['name']:<12} {label} ({tool['binary']})")
     if missing:
-        print(f"note: {len(missing)} external tool(s) missing; they will report status=missing")
+        print(f"missing: {len(missing)} external tool(s) not installed: {', '.join(missing)}")
+        print(f"next: {_install_hint_command()} for the scanner set")
 
     client = build_client(args.llm)
     health = client.health()
@@ -1106,6 +1106,21 @@ def _attestation(host: str, *, interactive: bool) -> bool:
     return answer.strip().lower() in {"yes", "y"}
 
 
+def _warn_on_missing_coverage() -> None:
+    """One stderr line up front when scanners are missing, before a long run."""
+    entries = catalog()
+    missing = [tool["name"] for tool in entries if not tool["installed"]]
+    if not missing:
+        return
+    installed = len(entries) - len(missing)
+    print(
+        f"note: {installed}/{len(entries)} scanners ready; "
+        f"{len(missing)} missing ({', '.join(missing)}). "
+        f"Install the scanner set: {_install_hint_command()}",
+        file=sys.stderr,
+    )
+
+
 def _install_hint_command() -> str:
     """The honest install hint for wherever the operator actually is."""
     if Path("run.sh").is_file():
@@ -1172,6 +1187,8 @@ def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
             print(f"  {line}")
         print("")
 
+    if not args.quiet:
+        _warn_on_missing_coverage()
     if args.plan:
         print("  --plan: nothing was sent. re-run without --plan to execute.")
         return 0

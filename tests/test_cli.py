@@ -31,7 +31,7 @@ class TestHelpAndListing:
     def test_version(self, capsys) -> None:
         with pytest.raises(SystemExit):
             main(["--version"])
-        assert "cyberpowerfull 5.0.0" in capsys.readouterr().out
+        assert "cyberpowerfull 5.0.1" in capsys.readouterr().out
 
     def test_list_tools(self, capsys) -> None:
         assert main(["--list-tools"]) == 0
@@ -117,6 +117,42 @@ class TestCheck:
             code = main(["--check", "--scope", str(workdir / "scope.json"), "--llm", "llamacpp"])
         assert code == 5
         assert "model error" in capsys.readouterr().out
+
+    def test_check_condenses_missing_tools(self, workdir: Path, capsys) -> None:
+        entries = [
+            {"name": "tcp_probe", "installed": True, "binary": "native"},
+            {"name": "nmap", "installed": False, "binary": "nmap"},
+            {"name": "nikto", "installed": False, "binary": "nikto"},
+        ]
+        with mock.patch("cyberpowerfull.cli.catalog", return_value=entries):
+            code = main(["--check", "--scope", str(workdir / "scope.json")])
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "MISSING binary" not in out
+        assert "missing: 2 external tool(s) not installed: nmap, nikto" in out
+        assert "install-tools" in out or "package manager" in out
+
+    def test_missing_coverage_warning_names_the_gap(self, capsys) -> None:
+        from cyberpowerfull.cli import _warn_on_missing_coverage
+
+        entries = [
+            {"name": "tcp_probe", "installed": True, "binary": "native"},
+            {"name": "nmap", "installed": False, "binary": "nmap"},
+            {"name": "nikto", "installed": False, "binary": "nikto"},
+        ]
+        with mock.patch("cyberpowerfull.cli.catalog", return_value=entries):
+            _warn_on_missing_coverage()
+        err = capsys.readouterr().err
+        assert "1/3 scanners ready" in err
+        assert "nmap, nikto" in err
+
+    def test_missing_coverage_warning_is_silent_when_complete(self, capsys) -> None:
+        from cyberpowerfull.cli import _warn_on_missing_coverage
+
+        entries = [{"name": "tcp_probe", "installed": True, "binary": "native"}]
+        with mock.patch("cyberpowerfull.cli.catalog", return_value=entries):
+            _warn_on_missing_coverage()
+        assert capsys.readouterr().err == ""
 
 
 class TestReplay:
