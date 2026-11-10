@@ -152,7 +152,9 @@ class TestRoleSeparation:
     def test_worker_unknown_tool(self, scope) -> None:
         worker = WorkerAgent("scan", scope=scope)
         result = worker.execute(
-            DelegationRequest(agent="scan", tool="metasploit", args={"target": "127.0.0.1"})
+            DelegationRequest(
+                agent="scan", tool="definitely_not_a_tool", args={"target": "127.0.0.1"}
+            )
         )
         assert result.status is ToolStatus.BLOCKED
 

@@ -1,21 +1,41 @@
 """nuclei wrapper: template-driven vulnerability validation (JSONL output).
 
+Flags and output keys are verified against projectdiscovery/nuclei v3.11.1
+(``cmd/nuclei/main.go``, ``pkg/output/output.go``, ``pkg/model/model.go``).
 The wrapper requests Interactsh to be disabled, but templates and the scanner
 are not sandboxed and can still contact other destinations.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import re
 
 from pydantic import Field, field_validator
 
+from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.models import Finding, Phase, Severity
-from cyberpowerfull.tools.base import BaseTool, UrlInput, json_lines, truncate
+from cyberpowerfull.tools.base import (
+    BaseTool,
+    ToolInput,
+    ToolStatus,
+    UrlInput,
+    json_lines,
+    truncate,
+)
 
 _TEMPLATE_RE = re.compile(r"^[A-Za-z0-9_\-/.]{1,200}$")
 _TAG_RE = re.compile(r"^[A-Za-z0-9_\-]{1,40}$")
 _ALLOWED_SEVERITIES = ("info", "low", "medium", "high", "critical")
+
+#: stderr fragments that mean the template store is missing, not that the
+#: target is clean. Surfaced as an actionable error instead of a bare exit code.
+_TEMPLATE_ERROR_MARKERS = (
+    "update-templates",
+    "no templates found",
+    "could not find nuclei-templates",
+    "template directory",
+)
 
 
 class NucleiArgs(UrlInput):
@@ -26,6 +46,8 @@ class NucleiArgs(UrlInput):
     templates: list[str] = Field(default_factory=list, max_length=20)
     rate_limit: int = Field(default=20, ge=1, le=150)
     concurrency: int = Field(default=10, ge=1, le=50)
+    timeout: int = Field(default=10, ge=1, le=120)
+    retries: int = Field(default=1, ge=0, le=5)
 
     @field_validator("severity")
     @classmethod
@@ -81,6 +103,10 @@ class NucleiTool(BaseTool):
             str(args.rate_limit),
             "-c",
             str(args.concurrency),
+            "-timeout",
+            str(args.timeout),
+            "-retries",
+            str(args.retries),
             "-severity",
             ",".join(args.severity),
         ]
@@ -89,6 +115,22 @@ class NucleiTool(BaseTool):
         for template in args.templates:
             argv.extend(["-t", template])
         return argv
+
+    def _execute(self, args: ToolInput, argv: list[str], policy: ToolPolicy):
+        result = super()._execute(args, argv, policy)
+        if result.status is ToolStatus.OK:
+            return result
+        lowered = result.stderr.lower()
+        if any(marker in lowered for marker in _TEMPLATE_ERROR_MARKERS):
+            return dataclasses.replace(
+                result,
+                error=(
+                    "nuclei has no template store on this host (a scan without templates "
+                    "proves nothing); run 'nuclei -update-templates' (or './run.sh "
+                    "--install-tools') and retry"
+                ),
+            )
+        return result
 
     def parse(self, args: NucleiArgs, output: str, out_file: str | None = None) -> list[Finding]:
         findings: list[Finding] = []
@@ -121,10 +163,22 @@ class NucleiTool(BaseTool):
             matcher = record.get("matcher-name")
             matched_at = str(record.get("matched-at") or record.get("host") or args.target)
             extracted = json_id_list(record.get("extracted-results"))
-            evidence = truncate(
-                f"template={template_id} matcher={matcher or '-'} matched_at={matched_at}"
-                + (f" extracted={', '.join(extracted[:3])}" if extracted else "")
-            )
+            description = str(info.get("description") or "").strip()
+            references = json_id_list(info.get("reference"))
+            replay = str(record.get("curl-command") or "").strip()
+            evidence_parts = [
+                f"template={template_id}",
+                f"matcher={matcher or '-'}",
+                f"matched_at={matched_at}",
+            ]
+            if extracted:
+                evidence_parts.append(f"extracted={', '.join(extracted[:3])}")
+            if description:
+                evidence_parts.append(f"about={truncate(description, 300)}")
+            if references:
+                evidence_parts.append(f"ref={references[0]}")
+            if replay:
+                evidence_parts.append(f"replay={truncate(replay, 300)}")
             findings.append(
                 self.finding(
                     title=f"{name} ({template_id})",
@@ -132,10 +186,11 @@ class NucleiTool(BaseTool):
                     confidence=0.9 if matcher else 0.65,
                     target=args.target,
                     endpoint=matched_at,
-                    evidence=evidence,
+                    evidence=truncate(" ".join(evidence_parts), 2000),
                     cwe=cwe,
                     cve=cve,
                     cvss=cvss,
+                    remediation=truncate(str(info.get("remediation") or "").strip(), 1000) or None,
                     # A template match is evidence, not independent verification.
                     verified=False,
                 )
