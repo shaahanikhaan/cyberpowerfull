@@ -16,7 +16,7 @@ from urllib.error import URLError
 
 import pytest
 
-from cyberpowerfull.brain.llm import LlamaCppClient, OllamaClient, build_client
+from cyberpowerfull.brain.llm import LlamaCppClient, build_client
 from cyberpowerfull.brain.orchestrator import Orchestrator
 from cyberpowerfull.cli import main
 from cyberpowerfull.config import RunConfig
@@ -122,7 +122,7 @@ def test_inference_failure_returns_five_and_saves_trace(
 ) -> None:
     path = stream(tmp_path / "decisions.json", [])
     args = run_args(tmp_path, scope_file, path)
-    args[args.index("--llm") + 1] = "ollama:qwen3:4b"
+    args[args.index("--llm") + 1] = "llamacpp:lab-model"
     with mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")):
         assert main([*args, "--quiet"]) == 5
     assert json.loads((tmp_path / "trace.json").read_text())["stop_reason"] == "inference_failed"
@@ -267,25 +267,23 @@ def test_llamacpp_alias_and_custom_endpoint_are_honored(monkeypatch) -> None:
     assert client.model == "my-model"
 
 
-def test_ollama_health_does_not_confuse_model_sizes() -> None:
-    with mock.patch(
-        "cyberpowerfull.brain.llm._get_json", return_value={"models": [{"name": "qwen3:1.7b"}]}
-    ):
-        health = OllamaClient(model="qwen3:4b").health()
+def test_llamacpp_health_rejects_an_invalid_model_list() -> None:
+    with mock.patch("cyberpowerfull.brain.llm._get_json", return_value={"data": "nope"}):
+        health = LlamaCppClient().health()
     assert health["ok"] is False
-    assert "not installed" in health["error"]
+    assert "invalid llama.cpp model list" in health["error"]
 
 
 def test_invalid_model_output_is_retried() -> None:
     responses = [
-        {"message": {"content": "not JSON"}},
-        {"message": {"content": '{"tool":"terminate"}'}},
+        {"choices": [{"message": {"content": "not JSON"}}]},
+        {"choices": [{"message": {"content": '{"tool":"terminate"}'}}]},
     ]
     with mock.patch("cyberpowerfull.brain.llm._post_json", side_effect=responses) as post:
-        decision = OllamaClient(max_retries=2).decide("system", "state")
+        decision = LlamaCppClient(max_retries=2).decide("system", "state")
     assert decision.tool == "terminate"
     assert post.call_count == 2
-    assert post.call_args.args[1]["think"] is False
+    assert post.call_args.args[1]["response_format"] == {"type": "json_object"}
 
 
 def test_loopback_model_redirect_is_never_followed() -> None:

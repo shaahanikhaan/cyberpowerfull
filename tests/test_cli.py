@@ -124,8 +124,8 @@ class TestReplay:
         trace = TraceRecorder(
             target="127.0.0.1",
             engagement="replay",
-            model="qwen3:4b",
-            backend="ollama",
+            model="auto-1",
+            backend="auto",
             scope_fingerprint="abc123",
             run_id="run-replay",
         )
@@ -501,7 +501,7 @@ class TestToolchainAndPlaybooks:
             lambda spec: type(
                 "C",
                 (),
-                {"health": lambda self: {"ok": True, "backend": "ollama", "endpoint": "local"}},
+                {"health": lambda self: {"ok": True, "backend": "auto", "endpoint": "local"}},
             )(),
         )
         assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 0
@@ -535,7 +535,7 @@ class TestToolchainAndPlaybooks:
             lambda spec: type(
                 "C",
                 (),
-                {"health": lambda self: {"ok": False, "backend": "ollama", "error": "down"}},
+                {"health": lambda self: {"ok": False, "backend": "auto", "error": "down"}},
             )(),
         )
         assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 5

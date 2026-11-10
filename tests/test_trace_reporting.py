@@ -39,8 +39,8 @@ def sample_trace() -> Trace:
     recorder = TraceRecorder(
         target="127.0.0.1",
         engagement="test-engagement",
-        model="qwen3:4b",
-        backend="ollama",
+        model="auto-1",
+        backend="auto",
         scope_fingerprint="deadbeef" * 8,
         run_id="run-test",
     )

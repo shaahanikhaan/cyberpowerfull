@@ -1,4 +1,4 @@
-"""Local inference transport tests: strict parsing and cloud refusal."""
+"""Decision backend tests: strict parsing, auto agent default, cloud refusal."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from urllib.error import URLError
 
 import pytest
 
+from cyberpowerfull.brain.agent import AutoAgent
 from cyberpowerfull.brain.llm import (
     LlamaCppClient,
-    OllamaClient,
     ReplayClient,
     assert_local_endpoint,
     build_client,
@@ -62,7 +62,7 @@ class TestEndpointPolicy:
 
     def test_client_constructor_enforces_policy(self) -> None:
         with pytest.raises(LLMError):
-            OllamaClient(endpoint="https://api.anthropic.com")
+            LlamaCppClient(endpoint="https://api.anthropic.com")
 
 
 class TestParseDecision:
@@ -105,64 +105,45 @@ class TestParseDecision:
         assert decision.step == 3
 
 
-class TestOllamaClient:
-    def test_decide_returns_decision(self) -> None:
-        payload = {"message": {"content": '{"tool": "delegate", "args": {"agent": "recon"}}'}}
-        with mock.patch(
-            "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse(payload)
-        ) as patched:
-            decision = OllamaClient().decide("system", "step", step=2)
-        assert decision.tool == "delegate"
-        request = patched.call_args.args[0]
-        body = json.loads(request.data.decode("utf-8"))
-        assert body["model"] == "qwen3:4b"
-        assert body["format"] == "json"
-        assert body["stream"] is False
-        assert body["messages"][0]["role"] == "system"
-        # A local HTTP call only; no cloud host is ever contacted.
-        assert "127.0.0.1" in request.full_url
-
-    def test_unreachable_raises(self) -> None:
-        with (
-            mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")),
-            pytest.raises(LLMError, match="unreachable"),
-        ):
-            OllamaClient(max_retries=1).decide("system", "step")
-
-    def test_retries_then_fails(self) -> None:
-        with (
-            mock.patch(
-                "cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")
-            ) as patched,
-            pytest.raises(LLMError),
-        ):
-            OllamaClient(max_retries=3).decide("system", "step")
-        assert patched.call_count == 3
-
-    def test_bad_body(self) -> None:
-        with (
-            mock.patch(
-                "cyberpowerfull.brain.llm._local_open",
-                return_value=_FakeResponse({"unexpected": True}),
-            ),
-            pytest.raises(LLMError, match="no message object"),
-        ):
-            OllamaClient().decide("system", "step")
-
-    def test_health(self) -> None:
-        payload = {"models": [{"name": "qwen3:4b"}, {"name": "llama3:8b"}]}
-        with mock.patch(
-            "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse(payload)
-        ):
-            health = OllamaClient().health()
+class TestAutoBackend:
+    def test_health_is_always_ok(self) -> None:
+        health = AutoAgent().health()
         assert health["ok"] is True
-        assert "qwen3:4b" in health["models"]
+        assert health["backend"] == "auto"
+        assert health["endpoint"] == "in-process"
 
-    def test_health_unreachable(self) -> None:
-        with mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")):
-            health = OllamaClient().health()
-        assert health["ok"] is False
-        assert "error" in health
+    def test_uses_no_tokens(self) -> None:
+        assert AutoAgent.uses_tokens is False
+
+    def test_first_decision_maps_the_surface(self) -> None:
+        agent = AutoAgent()
+        decision = agent.decide("system", _state(step=1, target="127.0.0.1"), step=1)
+        assert decision.tool == "delegate"
+        assert decision.args["tool"] == "tcp_probe"
+        assert decision.args["agent"] == "recon"
+
+    def test_never_raises_on_garbage_state(self) -> None:
+        decision = AutoAgent().decide("system", "not json at all", step=1)
+        assert decision.tool in {"delegate", "terminate"}
+
+
+def _state(*, step: int, target: str, last: dict | None = None) -> str:
+    return (
+        "STATE\n"
+        + json.dumps(
+            {
+                "step": step,
+                "target": target,
+                "phase": "recon",
+                "attack_node": None,
+                "difficulty": {},
+                "last_tool_result": last,
+                "known_failures": [],
+                "budget": {"max_iterations": 12, "tokens_left": 24000},
+            }
+        )
+        + "\n\nEmit exactly one decision JSON object."
+    )
 
 
 class TestLlamaCppClient:
@@ -185,11 +166,28 @@ class TestLlamaCppClient:
             LlamaCppClient(max_retries=1).decide("system", "step")
 
     def test_health(self) -> None:
-        payload = {"data": [{"id": "qwen3-4b"}]}
+        payload = {"data": [{"id": "local-gguf"}]}
         with mock.patch(
             "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse(payload)
         ):
             assert LlamaCppClient().health()["ok"] is True
+
+    def test_unreachable_raises(self) -> None:
+        with (
+            mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")),
+            pytest.raises(LLMError, match="unreachable"),
+        ):
+            LlamaCppClient(max_retries=1).decide("system", "step")
+
+    def test_retries_then_fails(self) -> None:
+        with (
+            mock.patch(
+                "cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")
+            ) as patched,
+            pytest.raises(LLMError),
+        ):
+            LlamaCppClient(max_retries=3).decide("system", "step")
+        assert patched.call_count == 3
 
 
 class TestReplayClient:
@@ -244,15 +242,18 @@ class TestReplayClient:
 
 
 class TestBuildClient:
-    def test_default_ollama(self) -> None:
+    def test_default_is_auto(self) -> None:
         client = build_client(None, ModelConfig())
-        assert isinstance(client, OllamaClient)
-        assert client.model == "qwen3:4b"
+        assert isinstance(client, AutoAgent)
+        assert client.backend == "auto"
 
-    def test_explicit_model(self) -> None:
-        client = build_client("ollama:qwen3:1.7b", ModelConfig())
-        assert isinstance(client, OllamaClient)
-        assert client.model == "qwen3:1.7b"
+    def test_explicit_auto(self) -> None:
+        assert isinstance(build_client("auto", ModelConfig()), AutoAgent)
+        assert isinstance(build_client("auto:auto-1", ModelConfig()), AutoAgent)
+
+    def test_ollama_spec_explains_removal(self) -> None:
+        with pytest.raises(LLMError, match="removed in 5.0"):
+            build_client("ollama:qwen3:4b", ModelConfig())
 
     def test_llamacpp_default_endpoint(self) -> None:
         client = build_client("llamacpp:local-gguf", ModelConfig())
@@ -266,8 +267,17 @@ class TestBuildClient:
         assert isinstance(client, ReplayClient)
 
     def test_unknown_backend(self) -> None:
-        with pytest.raises(LLMError, match="unsupported inference backend"):
+        with pytest.raises(LLMError, match="unsupported decision backend"):
             build_client("openai:gpt-4o", ModelConfig())
+
+    def test_endpoint_as_model_is_rejected(self) -> None:
+        with pytest.raises(LLMError, match="not a model id"):
+            build_client("llamacpp:http://127.0.0.1:8080", ModelConfig())
+
+    def test_remote_endpoint_rejected_for_auto(self) -> None:
+        config = ModelConfig(backend="auto", endpoint="http://api.example.com:11434")
+        with pytest.raises(LLMError, match="non-local"):
+            build_client("auto", config)
 
     def test_config_endpoint_respected(self) -> None:
         config = ModelConfig(backend="llamacpp", endpoint="http://127.0.0.1:9999")
