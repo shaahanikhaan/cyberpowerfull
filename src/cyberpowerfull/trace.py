@@ -66,6 +66,9 @@ class Trace(BaseModel):
     error: str | None = None
     budget: BudgetState = Field(default_factory=BudgetState)
     steps: list[StepRecord] = Field(default_factory=list)
+    #: Steps that were considered but not executed, each with its real reason
+    #: (missing binary, unpermitted phase, ungranted capability, negative cache).
+    skipped: list[str] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     attack_tree: dict[str, Any] = Field(default_factory=dict)
     memory_stats: dict[str, Any] = Field(default_factory=dict)

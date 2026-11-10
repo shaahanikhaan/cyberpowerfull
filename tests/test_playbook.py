@@ -196,6 +196,25 @@ class TestFacts:
         assert Facts(target="x").web_ports() == [80, 443]
 
 
+class TestSkipDisclosure:
+    def test_skips_are_recorded_in_the_trace_and_report(
+        self, scope, memory, tmp_path: Path
+    ) -> None:
+        # nmap is not installed in the test environment: the step must be skipped
+        # with a reason that reaches both the trace and the markdown report.
+        runner = build(scope, memory, {"tcp_probe": StubTool([make_finding()])})
+        result = runner.run(get_playbook("network"))
+        assert result.trace.skipped, "no skip recorded"
+        assert any("net-nmap" in entry for entry in result.trace.skipped)
+        assert any("not installed" in entry for entry in result.trace.skipped)
+
+        from cyberpowerfull.reporting import render_markdown
+
+        report = render_markdown(result.trace)
+        assert "## Skipped steps" in report
+        assert "net-nmap" in report
+
+
 class TestRunner:
     def test_native_step_produces_evidence_and_report(self, scope, memory, tmp_path: Path) -> None:
         stub = StubTool(

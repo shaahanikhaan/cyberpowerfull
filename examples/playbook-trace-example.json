@@ -2,14 +2,14 @@
   "schema_version": "1.0",
   "agent": "cyberpowerfull",
   "agent_version": "3.0.0",
-  "run_id": "play-e7d2e7a8031b",
+  "run_id": "play-aa89fe8180c6",
   "model": "none",
   "backend": "playbook:network",
   "engagement": "localhost-lab",
   "target": "127.0.0.1",
-  "scope_fingerprint": "254cfb7225695482dda232e7c987ab9fda18ab1aafcfc3bcde62099d55ee1bed",
-  "started_at": "2026-11-10T09:23:34.687705+00:00",
-  "finished_at": "2026-11-10T09:23:34.701690+00:00",
+  "scope_fingerprint": "eba61e58c67cabad4b8d1b0983d5df2c7dea90b913e769a1e25cce995e0f19b1",
+  "started_at": "2026-11-10T09:29:47.516676+00:00",
+  "finished_at": "2026-11-10T09:29:47.528167+00:00",
   "stop_reason": "playbook_complete",
   "error": null,
   "budget": {
@@ -18,7 +18,7 @@
     "max_seconds": 900,
     "iterations": 1,
     "tokens_used": 0,
-    "seconds_used": 0.014
+    "seconds_used": 0.011
   },
   "steps": [
     {
@@ -66,7 +66,7 @@
       "result": {
         "status": "ok",
         "exit_code": null,
-        "duration_ms": 2,
+        "duration_ms": 1,
         "argv": [
           "tcp_probe",
           "--host",
@@ -84,17 +84,27 @@
         "error": null
       },
       "finding_ids": [
-        "f-e74f73f6b290",
-        "f-53b8cd3b5e5f"
+        "f-8796e111a7dc",
+        "f-a5a0c2f1a161"
       ],
-      "started_at": "2026-11-10T09:23:34.689735+00:00",
-      "duration_ms": 2,
+      "started_at": "2026-11-10T09:29:47.518346+00:00",
+      "duration_ms": 1,
       "error": null
     }
   ],
+  "skipped": [
+    "net-nmap: binary not installed: nmap",
+    "net-naabu: binary not installed: naabu",
+    "net-masscan: binary not installed: masscan",
+    "net-services: binary not installed: nmap",
+    "net-web-port: binary not installed: httpx",
+    "net-nikto: binary not installed: nikto",
+    "net-testssl: binary not installed: testssl.sh",
+    "net-exploit-lookup: binary not installed: searchsploit"
+  ],
   "findings": [
     {
-      "id": "f-e74f73f6b290",
+      "id": "f-8796e111a7dc",
       "title": "Open TCP port 22",
       "severity": "info",
       "confidence": 0.9,
@@ -109,10 +119,10 @@
       "remediation": null,
       "verified": false,
       "phase": "recon",
-      "created_at": "2026-11-10T09:23:34.692223Z"
+      "created_at": "2026-11-10T09:29:47.520122Z"
     },
     {
-      "id": "f-53b8cd3b5e5f",
+      "id": "f-a5a0c2f1a161",
       "title": "Open TCP port 111",
       "severity": "info",
       "confidence": 0.9,
@@ -127,12 +137,12 @@
       "remediation": null,
       "verified": false,
       "phase": "recon",
-      "created_at": "2026-11-10T09:23:34.692247Z"
+      "created_at": "2026-11-10T09:29:47.520136Z"
     }
   ],
   "attack_tree": {},
   "memory_stats": {
-    "run_id": "play-e7d2e7a8031b",
+    "run_id": "play-aa89fe8180c6",
     "steps": 1,
     "findings": 2,
     "attempts": 1,

@@ -95,6 +95,11 @@ jobs:
 
       - name: Deterministic playbook run (no model, real local sockets)
         run: |
+          python -m http.server 8080 --bind 127.0.0.1 > /tmp/httpd8080.log 2>&1 &
+          for i in $(seq 1 20); do
+            (echo > /dev/tcp/127.0.0.1/8080) >/dev/null 2>&1 && break
+            sleep 0.5
+          done
           python -m cyberpowerfull.cli \
             --scope scope.json \
             --target 127.0.0.1 \
@@ -103,7 +108,8 @@ jobs:
             --out /tmp/playbook-art \
             --trace /tmp/playbook-trace.json \
             --memory /tmp/playbook-memory.sqlite3 \
-            --quiet
+            --quiet | tee /tmp/playbook-run.log
+          grep -Eq "skipped:|executed:" /tmp/playbook-run.log
           python - <<'PY'
           import json, pathlib
           trace = json.loads(pathlib.Path("/tmp/playbook-trace.json").read_text())
@@ -112,10 +118,15 @@ jobs:
           assert "net-tcp" in steps, sorted(steps)
           assert steps["net-tcp"]["result"]["status"] == "ok"
           assert trace["findings"], "playbook run produced no findings"
-          skipped = [s for s in steps.values() if s["result"]["status"] != "ok"]
-          assert skipped, "expected honest skips on a bare runner"
-          assert all(s["result"].get("error") or True for s in skipped)
+          assert any("8080" in json.dumps(f) for f in trace["findings"]), "port 8080 not evidenced"
           print("playbook ok:", trace["stop_reason"], len(trace["findings"]), "finding(s)")
+
+          # Steps the host cannot run must be reported with a real reason, not faked.
+          report = next(pathlib.Path("/tmp/playbook-art").glob("report-*.md"))
+          text = report.read_text()
+          assert "## Skipped steps" in text, "report hides skipped steps"
+          assert "not installed" in text or "requires capability" in text
+          print("skips disclosed in", report.name)
           PY
 
       - name: Live host inventory is machine-readable

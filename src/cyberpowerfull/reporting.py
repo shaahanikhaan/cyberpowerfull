@@ -124,6 +124,10 @@ def render_markdown(trace: Trace) -> str:
     else:
         lines.append("No steps were executed.")
 
+    if trace.skipped:
+        lines.extend(["", "## Skipped steps", ""])
+        lines.extend(f"- `{entry}`" for entry in trace.skipped)
+
     if trace.stop_reason in {"inference_failed", "policy_violation"} and trace.error:
         lines.extend(["", "## Run error", "", f"`{trace.error}`"])
 

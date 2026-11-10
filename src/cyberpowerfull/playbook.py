@@ -764,6 +764,7 @@ class PlaybookRunner:
             tree={},
             memory_stats=self.memory.stats(),
         )
+        trace.skipped = list(skipped)
         return PlaybookResult(
             trace=trace,
             findings=recorder.findings,
