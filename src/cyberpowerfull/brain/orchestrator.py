@@ -11,9 +11,12 @@ Strict role separation is enforced in code, not in the prompt alone:
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -27,7 +30,13 @@ from cyberpowerfull.brain.prompt import (
 )
 from cyberpowerfull.brain.tda import DifficultyLevel, TaskDifficultyAssessor, TDAInput, TDAReport
 from cyberpowerfull.config import RunConfig, ToolPolicy
-from cyberpowerfull.errors import LLMError, PolicyViolation, ScopeViolation
+from cyberpowerfull.errors import (
+    InvalidToolArguments,
+    LLMError,
+    PolicyViolation,
+    ScopeError,
+    ScopeViolation,
+)
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import (
     BudgetState,
@@ -36,10 +45,9 @@ from cyberpowerfull.models import (
     Phase,
     Severity,
     estimate_tokens,
-    new_id,
     utcnow,
 )
-from cyberpowerfull.scope import Scope
+from cyberpowerfull.scope import Scope, network_contains, normalize_host
 from cyberpowerfull.skills import skill_names
 from cyberpowerfull.tools.base import BaseTool, ToolResult, ToolStatus
 from cyberpowerfull.tools.registry import catalog, get_tool
@@ -85,6 +93,54 @@ class RootAgent:
         return decision.model_copy(update={"tool": action})
 
 
+def _network_entry(value: str) -> bool:
+    try:
+        ipaddress.ip_network(value, strict=False)
+        return True
+    except ValueError:
+        return False
+
+
+def _allowed_file(value: str, allowed: list[str]) -> bool:
+    """Allow only an exact existing file explicitly named by the operator."""
+    try:
+        candidate = Path(value).expanduser().resolve(strict=True)
+        if not candidate.is_file():
+            return False
+        for path in allowed:
+            try:
+                if candidate == Path(path).expanduser().resolve(strict=True):
+                    return True
+            except (OSError, RuntimeError, ValueError):
+                continue
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return False
+
+
+def _dns_exclusion_error(target: str, excluded_networks: tuple[str, ...]) -> str | None:
+    """Best-effort preflight; external scanners can resolve again after this check."""
+    host = normalize_host(target)
+    if not excluded_networks and host != "localhost":
+        return None
+    try:
+        addresses = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        return f"target DNS lookup failed: {exc}"
+    if not addresses:
+        return "target DNS returned no addresses"
+    networks = [ipaddress.ip_network(entry, strict=False) for entry in excluded_networks]
+    for item in addresses:
+        address = ipaddress.ip_address(item[4][0].split("%", 1)[0])
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+            address = address.ipv4_mapped
+        if host == "localhost" and not address.is_loopback:
+            return "localhost resolved outside loopback"
+        if any(network_contains(network, address) for network in networks):
+            return "target DNS resolved to an excluded network"
+    return None
+
+
 class WorkerAgent:
     """Executes exactly one delegated tool call, after re-checking scope."""
 
@@ -98,7 +154,12 @@ class WorkerAgent:
     ) -> None:
         self.name = name
         self.scope = scope
-        self.policy = policy or ToolPolicy()
+        base_policy = policy or ToolPolicy()
+        self.policy = replace(
+            base_policy,
+            max_rps=min(scope.max_rps, base_policy.max_rps or scope.max_rps),
+            excluded_networks=tuple(item for item in scope.exclude if _network_entry(item)),
+        )
         self._tools = tools if tools is not None else {}
         self.allowlist = WORKER_TOOL_ALLOWLIST[name]
 
@@ -112,10 +173,17 @@ class WorkerAgent:
             return self._tools[tool_name]
         return get_tool(tool_name)
 
-    def execute(self, request: DelegationRequest, *, dry_run: bool = False) -> ToolResult:
+    def execute(
+        self,
+        request: DelegationRequest,
+        *,
+        dry_run: bool = False,
+        timeout_s: float | None = None,
+    ) -> ToolResult:
         try:
+            self.scope.assert_runnable()
             tool = self._resolve(request.tool)
-        except PolicyViolation as exc:
+        except (PolicyViolation, ScopeError) as exc:
             return ToolResult(tool=request.tool, status=ToolStatus.BLOCKED, error=str(exc))
 
         if tool.phase not in self.scope.allowed_phases:
@@ -134,10 +202,70 @@ class WorkerAgent:
             )
         try:
             self.scope.require(target)
+            validated = tool.validate(request.args)
+            # Validate the actual canonical target the wrapper will receive too.
+            self.scope.require(validated.target)
         except ScopeViolation as exc:
             return ToolResult(tool=tool.name, status=ToolStatus.BLOCKED, error=str(exc))
+        except InvalidToolArguments as exc:
+            return ToolResult(tool=tool.name, status=ToolStatus.ERROR, error=str(exc))
 
-        return tool.run(request.args, dry_run=dry_run, policy=self.policy)
+        if tool.name == "subfinder" and not self.scope.allow_passive_sources:
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    "subfinder sends domains to external sources; "
+                    "set allow_passive_sources in scope"
+                ),
+            )
+        if tool.name == "ffuf" and not _allowed_file(
+            str(request.args.get("wordlist", "")), self.scope.allowed_wordlists
+        ):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error="ffuf wordlist must be an existing file listed in scope.allowed_wordlists",
+            )
+        if tool.name == "nuclei":
+            templates = request.args.get("templates") or []
+            if not templates or any(
+                not _allowed_file(str(path), self.scope.allowed_nuclei_templates)
+                for path in templates
+            ):
+                return ToolResult(
+                    tool=tool.name,
+                    status=ToolStatus.BLOCKED,
+                    error="nuclei requires explicit files listed in scope.allowed_nuclei_templates",
+                )
+        policy = self.policy
+        if timeout_s is not None:
+            policy = replace(policy, timeout_s=min(policy.timeout_s, max(timeout_s, 0.001)))
+        # The native TCP probe performs its own pinned DNS check; third-party
+        # scanners get a best-effort preflight, not a substitute for egress rules.
+        if not dry_run and tool.name not in {"tcp_probe", "subfinder"}:
+            dns_error = _dns_exclusion_error(validated.target, policy.excluded_networks)
+            if dns_error:
+                return ToolResult(tool=tool.name, status=ToolStatus.BLOCKED, error=dns_error)
+        result = tool.run(request.args, dry_run=dry_run, policy=policy)
+        allowed = [
+            finding
+            for finding in result.findings
+            if self.scope.authorizes(finding.target)
+            and (finding.endpoint is None or self.scope.authorizes(finding.endpoint))
+        ]
+        suppressed = len(result.findings) - len(allowed)
+        if suppressed:
+            result = result.model_copy(
+                update={
+                    "findings": allowed,
+                    "observations": [
+                        *result.observations,
+                        f"suppressed {suppressed} out-of-scope finding(s)",
+                    ],
+                }
+            )
+        return result
 
 
 @dataclass
@@ -176,7 +304,9 @@ class Orchestrator:
         self.policy = policy or ToolPolicy()
         self.assessor = assessor or TaskDifficultyAssessor()
         self.context_window = context_window
-        self.run_id = run_id or new_id("run-")
+        if run_id is not None and run_id != memory.run_id:
+            raise ValueError("orchestrator run_id must match the memory run_id")
+        self.run_id = run_id or memory.run_id
         self.skills = skills or skill_names()
         self.tools = tools or {}
         self.tree = tree or AttackTree(target=target)
@@ -247,16 +377,19 @@ class Orchestrator:
         )
         stop_reason = "budget_exhausted:iterations"
         error: str | None = None
+        set_deadline = getattr(self.client, "set_deadline", None)
+        if callable(set_deadline):
+            set_deadline(started + budget.max_seconds)
         last_result_payload: dict[str, Any] | None = None
         known_failures: list[str] = []
 
         for _ in range(budget.max_iterations):
-            budget.iterations += 1
             budget.seconds_used = round(time.monotonic() - started, 3)
             exhausted = budget.exhausted()
-            if exhausted and exhausted != "iterations":
+            if exhausted:
                 stop_reason = f"budget_exhausted:{exhausted}"
                 break
+            budget.iterations += 1
 
             tda = self._assess(budget)
             self.tree.enforce_depth(tda.max_depth)
@@ -265,6 +398,7 @@ class Orchestrator:
 
             node = self.tree.select(tda)
             if node is None:
+                budget.iterations -= 1
                 stop_reason = "attack_tree_exhausted"
                 break
 
@@ -282,7 +416,12 @@ class Orchestrator:
                 error = f"prompt rendering failed: {exc}"
                 break
 
-            budget.tokens_used += estimate_tokens(system_prompt) + estimate_tokens(step_prompt)
+            prompt_tokens = estimate_tokens(system_prompt) + estimate_tokens(step_prompt)
+            if prompt_tokens > budget.tokens_left:
+                budget.iterations -= 1
+                stop_reason = "budget_exhausted:tokens"
+                break
+            budget.tokens_used += prompt_tokens
             step_started = utcnow()
             t0 = time.monotonic()
             try:
@@ -299,15 +438,23 @@ class Orchestrator:
                     started_monotonic=t0,
                     error=str(exc),
                 )
+                self.memory.append_step(
+                    step=record.index,
+                    phase=record.phase,
+                    tool=record.action,
+                    ok=False,
+                    reason=record.error,
+                )
                 self._emit(progress, record)
                 stop_reason = "policy_violation"
                 error = str(exc)
                 break
             except LLMError as exc:
+                timed_out = time.monotonic() - started >= budget.max_seconds
                 record = self._record_step(
                     recorder,
                     index=budget.iterations,
-                    action="inference_failed",
+                    action="budget_exhausted" if timed_out else "inference_failed",
                     phase=node.phase,
                     node=node.id,
                     tda=tda,
@@ -316,8 +463,39 @@ class Orchestrator:
                     error=str(exc),
                 )
                 self._emit(progress, record)
-                stop_reason = "inference_failed"
-                error = str(exc)
+                stop_reason = "budget_exhausted:seconds" if timed_out else "inference_failed"
+                error = None if timed_out else str(exc)
+                self.memory.append_step(
+                    step=record.index,
+                    phase=record.phase,
+                    tool=record.action,
+                    ok=False,
+                    reason=record.error,
+                )
+                break
+
+            budget.tokens_used += estimate_tokens(decision.model_dump_json())
+            budget.seconds_used = round(time.monotonic() - started, 3)
+            exhausted = (
+                "seconds"
+                if budget.seconds_used >= budget.max_seconds
+                else "tokens" if budget.tokens_used >= budget.max_tokens else None
+            )
+            if exhausted is not None:
+                record = self._record_step(
+                    recorder,
+                    index=budget.iterations,
+                    action="budget_exhausted",
+                    phase=node.phase,
+                    node=node.id,
+                    tda=tda,
+                    started_at=step_started,
+                    started_monotonic=t0,
+                    reason=f"{exhausted} budget exhausted before tool execution",
+                )
+                self._persist_step(record, decision, ok=False, error=record.reason)
+                self._emit(progress, record)
+                stop_reason = f"budget_exhausted:{exhausted}"
                 break
 
             if decision.tool == "terminate" or decision.done:
@@ -333,6 +511,7 @@ class Orchestrator:
                     reason=decision.reason,
                     thought=decision.thought,
                 )
+                self._persist_step(record, decision, ok=True, error=None)
                 self._emit(progress, record)
                 stop_reason = "agent_terminated"
                 break
@@ -367,7 +546,18 @@ class Orchestrator:
                 self.tree.expand(node_id, request.expand, tda.max_depth)
 
             worker = self._workers[request.agent]
-            result = worker.execute(request, dry_run=self.config.dry_run)
+            remaining = max(0.0, budget.max_seconds - (time.monotonic() - started))
+            if remaining <= 0:
+                stop_reason = "budget_exhausted:seconds"
+                break
+            if self.memory.consecutive_failures(request.tool, request.args) >= 2:
+                result = ToolResult(
+                    tool=request.tool,
+                    status=ToolStatus.BLOCKED,
+                    error="retry limit reached after two consecutive failures for these arguments",
+                )
+            else:
+                result = worker.execute(request, dry_run=self.config.dry_run, timeout_s=remaining)
             ok = result.status in {ToolStatus.OK, ToolStatus.SKIPPED}
 
             self.memory.record_attempt(

@@ -2,23 +2,23 @@
   "schema_version": "1.0",
   "agent": "cyberpowerfull",
   "agent_version": "2.0.0",
-  "run_id": "run-95181711a2f2",
+  "run_id": "run-7356d6c6ca9e",
   "model": "replay",
   "backend": "replay",
   "engagement": "localhost-lab",
   "target": "127.0.0.1",
-  "scope_fingerprint": "eb443717a7770cfab9c2e3ae22daaced24708a3c78a196041efe81d6b00789e5",
-  "started_at": "2026-11-10T08:14:59.902783+00:00",
-  "finished_at": "2026-11-10T08:14:59.931908+00:00",
+  "scope_fingerprint": "94f3ba777abb11871c090cd841c2927fd50d44eda60d83c402d2b54ef9883c71",
+  "started_at": "2026-11-10T08:58:10.091118+00:00",
+  "finished_at": "2026-11-10T08:58:10.107624+00:00",
   "stop_reason": "agent_terminated",
   "error": null,
   "budget": {
     "max_iterations": 12,
     "max_tokens": 24000,
     "max_seconds": 900,
-    "iterations": 4,
-    "tokens_used": 22365,
-    "seconds_used": 0.029
+    "iterations": 2,
+    "tokens_used": 11107,
+    "seconds_used": 0.016
   },
   "steps": [
     {
@@ -30,15 +30,11 @@
       "args": {
         "target": "127.0.0.1",
         "ports": [
-          22,
-          80,
-          443,
-          8000,
-          8080
+          8000
         ],
         "timeout_s": 1.0
       },
-      "reason": "recon first: confirm which ports of the authorized loopback host are reachable before any deeper test",
+      "reason": "Check whether the operator's local lab service is reachable.",
       "thought": null,
       "node": "n1",
       "tda": {
@@ -61,211 +57,66 @@
       "result": {
         "status": "ok",
         "exit_code": null,
-        "duration_ms": 1,
+        "duration_ms": 0,
         "argv": [
           "tcp_probe",
           "--host",
           "127.0.0.1",
           "--ports",
-          "22,80,443,8000,8080",
+          "8000",
           "--timeout",
           "1.0"
         ],
-        "stdout_excerpt": "{\"open\": [22, 8000], \"errors\": {\"80\": \"ConnectionRefusedError\", \"443\": \"ConnectionRefusedError\", \"8080\": \"ConnectionRefusedError\"}}",
+        "stdout_excerpt": "{\"open\": [8000], \"errors\": {}}",
         "observations": [
-          "tcp_probe open=[22, 8000]",
-          "tcp_probe closed/filtered=['443', '80', '8080']"
+          "tcp_probe open=[8000]"
         ],
         "error": null
       },
       "finding_ids": [
-        "f-cccc8fa691d9",
-        "f-c96b487281b8"
+        "f-fcbd2ae0e78b"
       ],
-      "started_at": "2026-11-10T08:14:59.917535+00:00",
-      "duration_ms": 5,
+      "started_at": "2026-11-10T08:58:10.101505+00:00",
+      "duration_ms": 3,
       "error": null
     },
     {
       "index": 2,
       "role": "root",
-      "action": "delegate",
-      "phase": "scanning",
-      "tool": "httpx",
-      "args": {
-        "target": "http://127.0.0.1:8000",
-        "tech_detect": true,
-        "follow_redirects": true
-      },
-      "reason": "the reachable port belongs to a web service; probe it for status, title, and technology fingerprint",
+      "action": "terminate",
+      "phase": "recon",
+      "tool": null,
+      "args": {},
+      "reason": "The local lab check is complete. Review the trace and report.",
       "thought": null,
-      "node": "n2",
+      "node": "n1",
       "tda": {
         "horizon": 0.083,
-        "evidence_confidence": 0.172,
-        "context_load": 0.166,
+        "evidence_confidence": 0.142,
+        "context_load": 0.169,
         "historical_success": 1.0,
-        "difficulty": 0.311,
+        "difficulty": 0.32,
         "level": "low",
-        "expansion_threshold": 0.505,
+        "expansion_threshold": 0.51,
         "max_depth": 4,
         "rationale": [
           "horizon=0.08 (step 1/12)",
-          "evidence_confidence=0.17 from 2 finding(s)",
-          "context_load=0.17 (5452/32768 tokens)",
+          "evidence_confidence=0.14 from 1 finding(s)",
+          "context_load=0.17 (5537/32768 tokens)",
           "historical_success=1.00 over recorded attempts",
-          "open_attack_nodes=2, failed_attempts=0"
-        ]
-      },
-      "result": {
-        "status": "missing",
-        "exit_code": null,
-        "duration_ms": 0,
-        "argv": [
-          "httpx",
-          "-u",
-          "http://127.0.0.1:8000",
-          "-json",
-          "-silent",
-          "-no-color",
-          "-sc",
-          "-title",
-          "-t",
-          "10",
-          "-td",
-          "-follow-redirects"
-        ],
-        "stdout_excerpt": "",
-        "observations": [],
-        "error": "binary not installed: httpx"
-      },
-      "finding_ids": [],
-      "started_at": "2026-11-10T08:14:59.925788+00:00",
-      "duration_ms": 1,
-      "error": "binary not installed: httpx"
-    },
-    {
-      "index": 3,
-      "role": "root",
-      "action": "delegate",
-      "phase": "scanning",
-      "tool": "nuclei",
-      "args": {
-        "target": "http://127.0.0.1:8000",
-        "severity": [
-          "low",
-          "medium",
-          "high",
-          "critical"
-        ],
-        "rate_limit": 5,
-        "concurrency": 2
-      },
-      "reason": "no confirmed high-severity evidence yet and difficulty is still moderate; validate with templates but keep the request rate low",
-      "thought": null,
-      "node": "n2",
-      "tda": {
-        "horizon": 0.167,
-        "evidence_confidence": 0.172,
-        "context_load": 0.338,
-        "historical_success": 0.5,
-        "difficulty": 0.449,
-        "level": "medium",
-        "expansion_threshold": 0.575,
-        "max_depth": 3,
-        "rationale": [
-          "horizon=0.17 (step 2/12)",
-          "evidence_confidence=0.17 from 2 finding(s)",
-          "context_load=0.34 (11077/32768 tokens)",
-          "historical_success=0.50 over recorded attempts",
-          "open_attack_nodes=2, failed_attempts=1"
-        ]
-      },
-      "result": {
-        "status": "missing",
-        "exit_code": null,
-        "duration_ms": 0,
-        "argv": [
-          "nuclei",
-          "-u",
-          "http://127.0.0.1:8000",
-          "-jsonl",
-          "-silent",
-          "-nc",
-          "-no-interactsh",
-          "-rl",
-          "5",
-          "-c",
-          "2",
-          "-severity",
-          "low,medium,high,critical"
-        ],
-        "stdout_excerpt": "",
-        "observations": [
-          "nuclei: no template matched"
-        ],
-        "error": "binary not installed: nuclei"
-      },
-      "finding_ids": [],
-      "started_at": "2026-11-10T08:14:59.928830+00:00",
-      "duration_ms": 1,
-      "error": "binary not installed: nuclei"
-    },
-    {
-      "index": 4,
-      "role": "root",
-      "action": "terminate",
-      "phase": "validation",
-      "tool": null,
-      "args": {},
-      "reason": "attack tree has no node above the expansion threshold and the remaining branches are low value; report the collected evidence",
-      "thought": null,
-      "node": "n3",
-      "tda": {
-        "horizon": 0.25,
-        "evidence_confidence": 0.172,
-        "context_load": 0.51,
-        "historical_success": 0.333,
-        "difficulty": 0.538,
-        "level": "medium",
-        "expansion_threshold": 0.619,
-        "max_depth": 3,
-        "rationale": [
-          "horizon=0.25 (step 3/12)",
-          "evidence_confidence=0.17 from 2 finding(s)",
-          "context_load=0.51 (16709/32768 tokens)",
-          "historical_success=0.33 over recorded attempts",
-          "open_attack_nodes=1, failed_attempts=2"
+          "open_attack_nodes=1, failed_attempts=0"
         ]
       },
       "result": null,
       "finding_ids": [],
-      "started_at": "2026-11-10T08:14:59.931700+00:00",
+      "started_at": "2026-11-10T08:58:10.106492+00:00",
       "duration_ms": 0,
       "error": null
     }
   ],
   "findings": [
     {
-      "id": "f-cccc8fa691d9",
-      "title": "Open TCP port 22",
-      "severity": "info",
-      "confidence": 0.9,
-      "target": "127.0.0.1",
-      "endpoint": "127.0.0.1:22",
-      "evidence": "tcp connect succeeded on 22",
-      "tool": "tcp_probe",
-      "skill": "information_disclosure",
-      "cwe": null,
-      "cve": null,
-      "cvss": null,
-      "remediation": null,
-      "verified": false,
-      "phase": "recon",
-      "created_at": "2026-11-10T08:14:59.919300Z"
-    },
-    {
-      "id": "f-c96b487281b8",
+      "id": "f-fcbd2ae0e78b",
       "title": "Open TCP port 8000",
       "severity": "info",
       "confidence": 0.9,
@@ -280,23 +131,23 @@
       "remediation": null,
       "verified": false,
       "phase": "recon",
-      "created_at": "2026-11-10T08:14:59.919324Z"
+      "created_at": "2026-11-10T08:58:10.102787Z"
     }
   ],
   "attack_tree": {
     "open": 1,
-    "expanded": 1,
+    "expanded": 0,
     "confirmed": 0,
-    "pruned": 1,
+    "pruned": 0,
     "exhausted": 0,
-    "total": 3
+    "total": 1
   },
   "memory_stats": {
-    "run_id": "run-95181711a2f2",
-    "steps": 3,
-    "findings": 2,
-    "attempts": 3,
-    "success_rate": 0.3333,
-    "evidence_confidence": 0.1725
+    "run_id": "run-7356d6c6ca9e",
+    "steps": 2,
+    "findings": 1,
+    "attempts": 1,
+    "success_rate": 1.0,
+    "evidence_confidence": 0.1425
   }
 }

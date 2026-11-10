@@ -76,7 +76,7 @@ class TestTraceRecorder:
             target="t", engagement="e", model="m", backend="b", scope_fingerprint="f"
         )
         finding = sample_finding()
-        recorder.add_findings([finding])
+        recorder.add_findings([finding, finding])
         recorder.add_findings([finding])
         assert len(recorder.findings) == 1
 
@@ -181,3 +181,17 @@ class TestMarkdownReport:
         recorder.add_findings([finding])
         markdown = render_markdown(recorder.finish(stop_reason="x"))
         assert "weird \\| title" in markdown
+
+
+def test_untrusted_scanner_text_cannot_inject_html_or_new_markdown_sections() -> None:
+    recorder = TraceRecorder(
+        target="t", engagement="e", model="m", backend="b", scope_fingerprint="f"
+    )
+    finding = sample_finding()
+    finding.title = "<img src=x onerror=alert(1)>\n# fake heading"
+    finding.evidence = "`<script>alert(1)</script>`\n# fake section"
+    recorder.add_findings([finding])
+    markdown = render_markdown(recorder.finish(stop_reason="done"))
+    assert "<img" not in markdown and "<script>" not in markdown
+    assert "\n# fake" not in markdown
+    assert "&lt;img" in markdown and "&lt;script&gt;" in markdown

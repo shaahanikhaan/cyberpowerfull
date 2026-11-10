@@ -4,331 +4,285 @@
 that calls typed tools and records evidence against an authorized target. It is not a chatbot.
 
 **What does it do?** Recon, scanning, validation, and reporting against an authorized target —
-port discovery, HTTP probing, content discovery, template validation, injection confirmation.
+port discovery, HTTP probing, content discovery, template validation, and evidence reporting.
 
 **What makes it different?** Difficulty-aware planning, a typed tool layer, append-only memory,
-no cloud API key, no Docker, and no chat surface.
+no cloud API key, no Docker, and a reproducible local lab mode.
 
 [![version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 
-| Property | Value |
-|---|---|
-| Inference | local open-weight model (Qwen3-4B / equivalent) via Ollama or llama.cpp |
-| Typed tools | 9 (nmap, httpx, subfinder, nuclei, nikto, ffuf, sqlmap, dalfox, tcp_probe) |
-| Skill packs | 16 markdown/Jinja behavioural packages |
-| Tests | 321 tests, 92% line coverage, `pytest --cov-fail-under=70` enforced in CI |
-| Cloud dependencies | none (loopback-only inference, no telemetry, no SaaS callbacks) |
-
-> **This repository was hard-forked to be pentest-only.** The previous general-purpose
-> "assistant" surface, the rule-based pseudo-brain, and the unverifiable marketing claims were
-> removed. What remains is a reasoning loop, a typed tool layer, and deterministic memory.
-> See [CHANGELOG.md](CHANGELOG.md).
-
----
+The current checkout is version **2.0.0**; there is no published v1.5 specification in this
+repository. This is beta software, not a substitute for a professional assessment. See the
+[readiness audit](docs/readiness-audit.md) for research, verified behavior, and residual risks.
 
 ## Safety & Scope (read first)
 
-The agent **refuses to run without `scope.json`**. There is no override flag, no
-"`--force`", and no interactive confirmation prompt that a user could click through.
+Use only on systems you own or have explicit written authorization to test. The program requires
+an authorized `scope.json` and checks the primary target and phase before every delegated call.
+A missing, invalid, unauthorized, or expired scope exits `3`; an out-of-scope CLI target exits `4`.
 
-- `scope.json` must contain `{"authorized": true}` and a non-empty target list. Anything else
-  exits with code `3` before a single tool is invoked.
-- Every tool call is re-validated against the scope by the worker layer. A target outside the
-  scope is blocked, recorded as a blocked attempt, and never executed (exit code `4` for the
-  requested `--target`).
-- Scope is injected into the system prompt by the system, not by the model, together with a
-  SHA-256 fingerprint that is embedded in every trace.
-- Out-of-band interaction is disabled (`nuclei -no-interactsh`), cloud inference endpoints are
-  rejected at the transport layer, and tool subprocesses run with cloud credentials stripped
-  from the environment.
-- Exploitation is proof-only: no persistence, no lateral movement, no data extraction, no
-  denial of service, no webshells.
+**These checks are guardrails, not an operating-system or network sandbox.** Third-party scanners,
+local templates, DNS, redirects, tool configuration, and target responses can cause traffic that
+the Python process cannot fully inspect or constrain. Run in an isolated environment with
+operator-controlled DNS and outbound firewall rules; review the selected tools, templates,
+wordlists, and target traffic before use. Some scanner tests can change server state. Do not run
+against a production service without agreeing on those risks and rate limits with its owner.
 
-Test only assets you are contractually authorized to test. Unauthorized access to computer
-systems is a criminal offence in most jurisdictions. See [SECURITY.md](SECURITY.md).
+- `targets` are exact hosts/IPs or CIDRs. `domains` include the named domain and its subdomains;
+  `*.example.test` includes subdomains only, not the apex. Exclusions take precedence. Scope is
+  **host-based**: it does not restrict ports, paths, or HTTP methods.
+- A DNS lookup resolving into an excluded IP network is blocked before the native TCP probe and
+  checked on a best-effort basis before other scanners. External tools can resolve again; enforce
+  exclusions at the network boundary too.
+- `max_rps` paces native TCP connections and is translated into supported scanner rate/delay
+  flags. It is **not a guaranteed global traffic limit**: tool versions, retries, DNS, templates,
+  subprocesses, and concurrent runs can exceed it. Use an external rate limiter when required.
+- `subfinder` contacts third-party sources and is blocked unless `allow_passive_sources` is
+  explicitly set to `true`. `ffuf` requires an existing file listed in `allowed_wordlists`;
+  `nuclei` requires explicit, existing files listed in `allowed_nuclei_templates`. Paths are
+  operator-controlled, not chosen freely by the model. Only allow files you have reviewed.
+- `nuclei` is started with Interactsh, HTTP redirects, and update checks disabled; `httpx` may
+  follow only same-host redirects; sqlmap is told not to follow redirects or proxies. These flags
+  do not make arbitrary third-party templates or binaries safe. Model traffic is restricted to
+  loopback and does not follow redirects or use environment HTTP proxies.
+- Findings are observations or tool-reported candidates, **not proof of impact**. A Nuclei
+  template match is unverified; an open port alone does not identify a service. Review findings
+  and evidence manually.
 
----
+Traces, reports, and SQLite memory can contain sensitive URLs, cookies, request bodies, model
+output, and evidence. New files are written with owner-only permissions on POSIX, but they are
+**not encrypted**; existing directory permissions are not changed. Protect and delete engagement
+files according to your agreement. See [SECURITY.md](SECURITY.md).
 
 ## Architecture
 
-Three layers, strict separation, deterministic control plane around an LLM:
-
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ LAYER 1 — REASONING (local model, e.g. Qwen3-4B via Ollama / llama.cpp)      │
-│   system_prompt.jinja  →  TDA  →  EGATS node  →  one JSON decision per step  │
-└───────────────────────────────┬──────────────────────────────────────────────┘
-                                │  {"step": 3, "tool": "delegate", "args": {…}, "reason": "…"}
-┌───────────────────────────────▼──────────────────────────────────────────────┐
-│ ROOT AGENT — orchestration only. Permitted actions: delegate | terminate.    │
-│   no executor · no shell · no subprocess handle · no memory write access     │
-└───────────────────────────────┬──────────────────────────────────────────────┘
-                                │  DelegationRequest (Pydantic, extra keys rejected)
-┌───────────────────────────────▼──────────────────────────────────────────────┐
-│ LAYER 2 — TOOL & SKILL LAYER (deterministic)                                 │
-│   workers: recon | scan | validate                                           │
-│   typed tools: nmap httpx subfinder nuclei nikto ffuf sqlmap dalfox tcp_probe│
-│   Pydantic args → argv list (shell=False) → subprocess → parser → Findings   │
-│   16 skill packs (Markdown/Jinja) rendered into the system prompt            │
-└───────────────────────────────┬──────────────────────────────────────────────┘
-                                │  ToolResult(status, findings, observations)
-┌───────────────────────────────▼──────────────────────────────────────────────┐
-│ LAYER 3 — MEMORY (deterministic, append-only SQLite)                         │
-│   findings · attempts (negative cache) · steps · evidence                    │
-│   UPDATE/DELETE rejected by triggers · model sees a read-only MemoryView     │
-└──────────────────────────────────────────────────────────────────────────────┘
+operator scope + target
+       │
+       ▼
+local model or recorded decisions ─► root agent (delegate / terminate only)
+       │                                     │
+       │                              TDA + attack tree
+       │                                     ▼
+       └──────────────────────────► worker + scope/policy checks
+                                             │
+                                   typed tool / native TCP probe
+                                             │
+                                             ▼
+                              run-isolated append-only SQLite memory
+                                             │
+                                             ▼
+                                  JSON trace + Markdown/JSON reports
 ```
 
-The per-step loop (TDA + EGATS):
+The model selects one action at a time; it does not build shell commands. Workers validate typed
+arguments, check the authorized target, apply per-tool guardrails, and execute argv lists with
+`shell=False`. A deterministic task-difficulty assessment (TDA) and evidence-guided attack tree
+help select the next hypothesis. Recon → scanning → validation is a planning guideline, not a
+hard phase-order guarantee. Two identical consecutive failed attempts are blocked in a run.
 
-```
-        ┌──────────────────────────── TDA ─────────────────────────────┐
-        │ horizon · evidence confidence · context load · historical win │
-        └───────────────────────────────┬──────────────────────────────┘
-                                        ▼
-        memory digest ────────► difficulty score, level, threshold, max depth
-                                        │
-                                        ▼
-                     EGATS: pick the highest expected-value node
-                            (no over-commitment when difficulty is high)
-                                        │
-                                        ▼
-        system prompt = scope + TDA state + attack tree + memory + tools + skills
-                                        │
-                                        ▼
-                     local model → exactly one validated JSON decision
-                                        │
-                                        ▼
-        delegate → worker → scope re-check → typed tool → parsed findings
-                                        │
-                                        ▼
-        append findings/attempts to memory · update tree · write trace record
-```
-
-**Task Difficulty Assessment** (`brain/tda.py`) scores four measurable dimensions and maps
-them to a difficulty level, an expansion threshold, and a maximum tree depth:
-
-| Dimension | Meaning | Weight |
-|---|---|---|
-| Horizon | fraction of the step budget consumed | 0.35 |
-| Evidence confidence | strength of the evidence collected so far | 0.30 (inverted) |
-| Context load | fraction of the context window consumed | 0.20 |
-| Historical success | success rate over recorded attempts | 0.15 (inverted) |
-
-**Evidence-Guided Attack Tree Search** (`brain/attack_tree.py`) scores each hypothesis as
-`prior × (1 + evidence) − 0.15 × failures`. When difficulty is `high` or `critical`, nodes that
-cannot clear the raised threshold are pruned instead of explored, and the allowed depth shrinks.
-The model can expand the tree by proposing child hypotheses; only the orchestrator mutates it.
-
-### Repository layout
-
-```
-src/cyberpowerfull/
-├── cli.py                  # pentest-only CLI, exit-code contract
-├── scope.py                # scope.json loading, matching, fingerprint
-├── models.py               # Phase, Severity, Finding, Decision, BudgetState
-├── config.py               # RunConfig, ModelConfig, ToolPolicy (env sanitation)
-├── trace.py                # Trace / StepRecord / replay
-├── reporting.py            # Markdown report + findings JSON
-├── brain/
-│   ├── system_prompt.jinja # the behavioural operating system
-│   ├── prompt.py           # Jinja2 renderer (StrictUndefined)
-│   ├── llm.py              # loopback-only Ollama / llama.cpp / replay clients
-│   ├── tda.py              # Task Difficulty Assessment
-│   ├── attack_tree.py      # EGATS state machine
-│   └── orchestrator.py     # RootAgent, WorkerAgent, Orchestrator
-├── tools/                  # 9 typed wrappers + registry
-├── skills/packs/           # 16 Markdown/Jinja skill packages
-└── memory/store.py         # append-only SQLite memory
-```
-
----
+SQLite records are keyed by run ID, so findings and failures from an earlier run do not enter a
+new run's prompts or suppress its findings. SQL triggers reject ordinary UPDATE/DELETE operations;
+they do not protect the database from someone with filesystem or schema access.
 
 ## Quick Start
 
-Three commands, no API key, no Docker:
+Python 3.10+ is required. Installing the package downloads its Python dependencies if they are
+not already available. No model or external scanner is needed for the following **loopback-only**
+lab. Commands assume a checkout of this repository.
+
+In terminal 1, install and start a self-owned test service on port 8000:
 
 ```bash
-pip install -e .
-python -m cyberpowerfull.cli --scope scope.json --target example.com
-python -m cyberpowerfull.cli --replay traces/latest.json
+python -m pip install -e .
+python -m http.server 8000 --bind 127.0.0.1
 ```
 
-Before the second command, one of:
+In terminal 2, run the recorded decisions and inspect the report:
 
 ```bash
-ollama serve & ollama pull qwen3:4b              # Ollama backend (default)
-llama-server -m qwen3-4b-instruct.gguf -c 32768  # llama.cpp backend, then --llm llamacpp:qwen3
+cyberpowerfull --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json
+cyberpowerfull --replay traces/latest.json
 ```
 
-`scope.json` in the repository root is a loopback-only lab scope. Copy `scope.example.json` and
-replace the targets, authorization reference, and expiry with your engagement values. The agent
-will not start otherwise.
+The first command **does connect** to your local service using the native `tcp_probe`; it is not a
+simulation. It should produce an informational open-port finding and an exit code of `0`. The
+second command only regenerates reports from the saved trace and contacts neither a target nor a
+model. Stop the HTTP server with Ctrl+C when finished. The bundled lab scope has no expiry and
+authorizes only the listed loopback names/IPs; use an appropriate expiry for real engagements.
 
-### Common invocations
+### Use a local model
+
+Install and start [Ollama](https://github.com/ollama/ollama), then pull `qwen3:4b` using its
+normal installation instructions. Model downloads require network access and can be large. In
+another terminal:
 
 ```bash
-# Validate scope, tool availability, and the local model endpoint without running anything
-python -m cyberpowerfull.cli --check --scope scope.json --target 127.0.0.1
-
-# Rehearse the loop with command lines built but nothing executed
-python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --dry-run
-
-# Inspect what the model is told (regenerate the system prompt)
-python -m cyberpowerfull.cli --render-prompt --scope scope.json --target 127.0.0.1
-
-# Catalogue
-python -m cyberpowerfull.cli --list-tools
-python -m cyberpowerfull.cli --list-skills
+ollama pull qwen3:4b
+cyberpowerfull --check --scope scope.json --target 127.0.0.1 --llm ollama:qwen3:4b
+cyberpowerfull --scope scope.json --target 127.0.0.1 --llm ollama:qwen3:4b
 ```
 
-Artifacts: `traces/latest.json` (structured run trace), `artifacts/report-<run_id>.md`
-(human review), `artifacts/findings-<run_id>.json` (machine review),
-`artifacts/memory.sqlite3` (append-only memory).
+`--check` confirms scope, looks for tool executables on `PATH`, and checks model-server
+reachability and the exact Ollama model tag. It does **not** verify scanner versions or prove
+that a scan will succeed. Missing optional binaries are reported; only `tcp_probe` is built in.
+A local model may still choose unavailable or disallowed tools; inspect the trace and exit code.
+llama.cpp is available through `--llm llamacpp:MODEL`, with its server listening on loopback.
+
+### Other useful commands
+
+```bash
+# Build commands without connecting to the target; still needs a local model or replay stream.
+cyberpowerfull --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json --dry-run
+
+# Inspect scope and available tool/skill contracts.
+cyberpowerfull --render-prompt --scope scope.json --target 127.0.0.1
+cyberpowerfull --list-tools
+cyberpowerfull --list-skills
+
+# Machine-readable trace on stdout; progress goes to stderr.
+cyberpowerfull --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json --json
+```
+
+Artifacts default to `traces/latest.json`, `artifacts/report-<run_id>.md`,
+`artifacts/findings-<run_id>.json`, and `artifacts/memory.sqlite3`. Use `--out`, `--trace`, and
+`--memory` to choose paths. A dry run still uses the model or decision stream and writes these
+local artifacts; it does not execute or resolve tool targets.
+
+### Configure an engagement
+
+Copy `scope.example.json`, set the engagement name, authorization reference, exact targets,
+exclusions, allowed phases, rate, and expiry to match the written agreement. The template starts
+with `"authorized": false`; set it to `true` only after confirming written permission. Do not use
+the example domains as real targets. Optional properties default to disabled/empty:
+
+```json
+{
+  "allow_passive_sources": false,
+  "allowed_wordlists": ["/absolute/path/to/reviewed-wordlist.txt"],
+  "allowed_nuclei_templates": ["/absolute/path/to/reviewed-template.yaml"]
+}
+```
+
+This is a fragment, not a complete scope file. Allowlisted paths must be existing files. The
+wrappers currently require simple ASCII paths without spaces or `..`; ffuf also supports `~`.
+A Nuclei delegation must explicitly name its allowed template files; unrestricted default-template
+scans are not allowed. An allowlisted file can still contain unsafe behavior, so review it and
+restrict network access separately.
+
+Environment variables `CYBERPOWERFULL_SCOPE`, `CYBERPOWERFULL_LLM`,
+`CYBERPOWERFULL_LLM_BACKEND`, `CYBERPOWERFULL_MODEL`, `CYBERPOWERFULL_LLM_ENDPOINT`,
+`CYBERPOWERFULL_MAX_ITERATIONS`, `CYBERPOWERFULL_MAX_TOKENS`, and
+`CYBERPOWERFULL_MAX_SECONDS` provide defaults; explicit CLI options take precedence. Model
+endpoints must be loopback HTTP(S) addresses. `localhost` is pinned to IPv4 loopback by the
+transport; use `[::1]` explicitly for an IPv6-only service.
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | run completed (any stop condition: tree exhausted, budget, terminate, critical finding) |
-| 2 | usage error |
-| 3 | `scope.json` missing, invalid, unauthorized, or expired |
-| 4 | target outside the authorized scope |
-| 5 | local inference unavailable |
-| 6 | tool argument or execution error surfaced to the operator |
-| 7 | policy violation by the reasoning model (e.g. the root agent tried to run a scanner) |
+| 0 | run/replay completed without a failed or blocked action; inspect `stop_reason` for normal budget/tree termination |
+| 1 | local storage, trace validation, or prompt-rendering failure |
+| 2 | invalid CLI usage or non-positive budget |
+| 3 | scope missing, invalid, unauthorized, or expired |
+| 4 | requested CLI target outside scope |
+| 5 | inference unavailable, invalid model response, or invalid local model configuration |
+| 6 | a delegated tool failed, timed out, was missing, or received invalid arguments |
+| 7 | root policy violation or blocked worker delegation |
+| 130 | interrupted by the operator |
 
----
+A run saves its trace and reports before returning `5`, `6`, or `7` when possible. A later
+`--replay` reports whether replay itself succeeded, not whether the original run succeeded.
+Time and token budgets are checked at decision boundaries; token counts are estimates. DNS and
+third-party subprocess behavior can exceed a wall-clock budget, so use an external supervisor
+for strict deadlines.
 
 ## Supported Tools
 
-Every wrapper validates arguments with Pydantic (`extra="forbid"`), builds an argv list with
-`shell=False`, executes through `subprocess`, and parses output into typed findings. Cloud
-credentials are stripped from the subprocess environment.
+External tools are **optional** and installed separately. The wrapper is unit-tested against
+sample output; third-party CLI flags and output formats are version-sensitive and are not a
+promise of live compatibility with every release. The native probe is exercised against a real
+loopback service in the test suite. Inspect and independently validate results.
 
 | Tool | Input schema (key fields) | Output format | Status |
 |---|---|---|---|
-| `nmap` | `target`, `ports` (`top-N` or list), `service_detection`, `timing`, `scripts` (allowlist) | XML on stdout (`-oX -`) → ports, service banners | tested (unit, mocked subprocess) |
-| `httpx` | `target` (URL), `ports`, `tech_detect`, `follow_redirects`, `threads` | JSONL (`-json`) → status, title, tech, server | tested (unit) |
-| `subfinder` | `target` (domain), `all_sources`, `recursive`, `max_findings` | one hostname per line | tested (unit) |
-| `nuclei` | `target`, `severity`, `tags`, `templates`, `rate_limit`, `concurrency` | JSONL → template, severity, CVE/CWE, matcher | tested (unit) |
-| `nikto` | `target`, `port`, `ssl`, `tuning` | plain text `+` items → severity mapping | tested (unit) |
-| `ffuf` | `target` (must contain `FUZZ`), `wordlist`, `method`, `extensions`, `match_codes` | JSON file (`-of json`) → discovered paths | tested (unit) |
-| `sqlmap` | `target` (URL), `data`, `parameter`, `level`, `risk`, `technique`, `dbms` | stdout → confirmed injection point | tested (unit) |
-| `dalfox` | `target` (URL), `method`, `data`, `cookie`, `workers` | JSON file (`--format json`) → XSS payloads | tested (unit) |
-| `tcp_probe` | `target`, `ports` (≤64), `timeout_s` | native JSON (`{"open": [...], "errors": {...}}`) | tested (unit + end-to-end) |
-
-`tcp_probe` is a native pure-Python TCP connect probe. It exists so that a run produces real
-evidence on machines without scanner binaries (CI, minimal lab images) — no payloads, no
-fingerprinting.
-
-Status legend: *unit* means argv construction, output parsing, error paths, and
-`subprocess` interactions are covered by tests with mocked subprocess calls. These wrappers have
-not been validated against live third-party targets in CI; treat the parsers as version-sensitive.
-
----
+| `nmap` | `target`, `ports`, `service_detection`, allowlisted `scripts` | XML → open ports and banners | tested with mocked subprocess; default NSE script set rejected |
+| `httpx` | URL `target`, `ports`, `tech_detect`, `follow_redirects`, `threads` | JSONL → status, title, technology | tested with mocks; install ProjectDiscovery's httpx |
+| `subfinder` | domain `target`, `all_sources`, `recursive` | hostnames → candidates | tested with mocks; external-source opt-in required |
+| `nuclei` | URL `target`, `severity`, `tags`, `templates`, `rate_limit` | JSONL → unverified template matches | tested with mocks; reviewed allowlisted templates required |
+| `nikto` | `target`, `port`, `ssl`, `tuning` | text → observations | tested with mocks; ambiguous error exits are surfaced |
+| `ffuf` | URL with `FUZZ` in path/query, allowlisted `wordlist`, `method` | JSON file → discovered paths | tested with mocks; no authority fuzzing or redirects |
+| `sqlmap` | URL `target`, `data`, `parameter`, `level`, `risk`, `technique` | text → injection candidates | tested with mocks; preliminary heuristics stay unverified |
+| `dalfox` | URL `target`, `method`, `data`, `cookie`, `workers` | JSON file → XSS candidates | tested with mocks; review compatibility and output |
+| `tcp_probe` | `target`, `ports` (≤64), `timeout_s` | native JSON → open TCP ports | tested with mocks and a loopback service |
 
 ## Skills
 
-Skill packs are Markdown/Jinja packages rendered into the system prompt. Each pack states the
-signals that justify it, the probe order, the validation criteria, the evidence required to
-report a finding, and its stop criteria. A skill is a behavioural contract, not executable code.
+The 16 Markdown/Jinja skill packs are planning guidance, not independent executable features or
+proof that the agent can fully test every category. They are included in the model prompt.
 
-| Skill pack | Covers | Primary tools |
-|---|---|---|
-| `authentication_jwt` | token handling, `alg` confusion, claim tampering, session lifecycle | httpx, ffuf |
-| `idor` | horizontal and vertical object access with two identities | httpx, ffuf |
-| `sql_injection` | boolean differentials, error signatures, confirmation-only sqlmap | sqlmap, ffuf |
-| `xss` | reflection context mapping, payload confirmation | dalfox, ffuf |
-| `ssrf` | server-initiated requests to in-scope collaborators only | httpx, nuclei |
-| `csrf` | token presence, SameSite behaviour, Origin validation | httpx |
-| `xxe` | DOCTYPE/entity handling in XML, SVG, SOAP, documents | httpx, nuclei |
-| `rce` | proof-only evaluation of interpreters and template engines | nuclei, httpx |
-| `business_logic` | client-controlled value, entitlement, and workflow state | httpx, ffuf |
-| `race_conditions` | check-then-act limits with small parallel bursts | httpx |
-| `path_traversal` | encoded traversal sequences against file parameters | ffuf, httpx |
-| `open_redirect` | Location-header control through redirect parameters | httpx, nuclei |
-| `mass_assignment` | privileged fields accepted from client bodies | httpx |
-| `file_uploads` | type, extension, and serving behaviour of uploaded content | httpx, ffuf |
-| `information_disclosure` | banners, debug endpoints, backups, leaked metadata | nmap, httpx, nikto, nuclei, ffuf, tcp_probe |
-| `subdomain_takeover` | dangling DNS records pointing at unclaimed resources | subfinder, httpx |
-
-```bash
-python -m cyberpowerfull.cli --list-skills
-```
-
----
+| Skill pack | Focus |
+|---|---|
+| `authentication_jwt` | authentication and token handling |
+| `idor` | object-level authorization |
+| `sql_injection` | SQL injection candidates |
+| `xss` | cross-site scripting candidates |
+| `ssrf` | server-side request handling |
+| `csrf` | cross-site request forgery |
+| `xxe` | XML external entities |
+| `rce` | remote code execution candidates |
+| `business_logic` | workflow and entitlement rules |
+| `race_conditions` | concurrent workflow behavior |
+| `path_traversal` | path handling |
+| `open_redirect` | redirect validation |
+| `mass_assignment` | client-controlled object fields |
+| `file_uploads` | upload handling |
+| `information_disclosure` | exposed metadata and services |
+| `subdomain_takeover` | dangling service references |
 
 ## How the agent behaves
 
-The system prompt (`src/cyberpowerfull/brain/system_prompt.jinja`) is the behavioural operating
-system. It is rendered with `StrictUndefined` — a missing context key is a hard failure, never a
-silently partial contract — and contains, in order:
-
-1. `root_agent_directive` — orchestration and delegation only; the forbidden actions are listed
-   explicitly and enforced in code (`RootAgent.ALLOWED_ACTIONS`).
-2. `core_capabilities` — identity as an authorized pentest validation agent, and the
-   capabilities it explicitly does not have (general conversation, unrelated assistance).
-3. `communication_rules` — exactly one JSON object per step, the decision schema, inter-agent
-   messaging rules, and tool-call requirements.
-4. `execution_guidelines` — authorization, recon → scanning → validation order, evidence rules,
-   proof-only exploitation.
-5. `authorized_scope` — the system-verified scope block and fingerprint.
-6. `task_difficulty_assessment` — the four dimensions, the composite score, and the directive.
-7. `evidence_guided_attack_tree_search` — the selection rule and current tree state.
-8. `memory` — read-only digest of findings, severities, failures, and success rate.
-9. `tool_catalogue` — every tool with phase, install state, description, and argument schema.
-10. `skill_packs` — all 16 rendered packages.
-11. `current_objective`, 12. `stop_conditions`, 13. `safety`.
-
-Stop conditions: attack tree exhausted, budget exhausted (iterations / tokens / seconds), a
-critical finding confirmed with verified evidence, no node clearing the threshold at high
-difficulty, or an explicit `terminate` decision.
-
-### Reasoning backends
+The system prompt includes the system-loaded scope and fingerprint, a read-only digest of the
+current run's memory, TDA/attack-tree state, tool schemas, and skill guidance. The root role may
+only delegate or terminate; workers use a separate allowlist. Model output is schema-validated,
+but the model and target-controlled output remain untrusted. Prompt instructions are not a
+security boundary. A run may stop on a budget, exhausted tree, confirmed critical finding,
+explicit termination, inference error, or policy violation.
 
 | Spec | Backend | Notes |
 |---|---|---|
-| `ollama:qwen3:4b` | Ollama `/api/chat` | default; `format: json` enforced |
-| `llamacpp:qwen3` | llama.cpp `/v1/chat/completions` | `response_format: json_object` |
-| `replay:path.json` | recorded decision stream | deterministic reproduction, no model |
-
-Any non-loopback endpoint is rejected with exit code `5` before a request is sent. There is no
-API-key code path and none will be added.
-
----
+| `ollama:qwen3:4b` | Ollama `/api/chat` | local JSON output; Qwen3 thinking is disabled for short structured decisions |
+| `llamacpp:MODEL` | llama.cpp `/v1/chat/completions` | local OpenAI-compatible JSON endpoint |
+| `replay:examples/decisions.json` | recorded decisions | no model, but delegated tools execute unless `--dry-run` is set |
+| `--replay traces/latest.json` | trace replay | reports only; no model or target traffic |
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 ruff check .
 black --check .
-pytest                      # coverage gate (70%) lives in pyproject.toml addopts
-pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
+pytest
 ```
 
-Continuous integration (`.github/workflows/ci.yml`) runs ruff, black, the test suite with
-coverage on Python 3.10–3.12, and an end-to-end smoke test: a replay decision stream drives the
-agent against a local mock TCP service, and the job asserts that the emitted trace contains
-steps, tool calls, and findings.
-
-Example artifacts are committed under `examples/`: `decisions.json` (replay stream) and
-`trace-example.json` (trace produced by that stream against a local mock service).
+CI runs lint, formatting, coverage, a loopback lab smoke test, and a package-install check. The
+tests include scope bypass regressions, run isolation, output/exit handling, local-model HTTP
+transport, and real loopback TCP probing. External scanner tests use fixtures and mocked
+subprocesses; they do not establish compatibility with arbitrary installed versions. See
+[docs/readiness-audit.md](docs/readiness-audit.md) for the research and remaining limitations.
 
 ## Limitations
 
-- Parsers target current tool output formats; upstream CLI changes require parser updates.
-- Validation quality depends on the local model. A 4B model needs a strict prompt and small
-  steps; that is why decisions are single-action JSON with schema validation.
-- Findings are evidence-linked, not proof-of-impact: a `low` finding is a hypothesis with
-  support, not necessarily exploitable.
-- There is no web UI, no multi-tenant server, no scheduling, and no chat interface — by design.
+- This is beta software; manually verify all results and supervise every engagement.
+- Network isolation, rate enforcement, data loss prevention, and scanner sandboxing are the
+  operator's responsibility. Local inference does not mean all scanner activity is offline.
+- Local model quality and available context affect planning; skill packs are not guarantees.
+- There is no web UI, scheduler, multi-tenant server, or general chat interface.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Security policy and reporting: [SECURITY.md](SECURITY.md).
-Change history: [CHANGELOG.md](CHANGELOG.md).
+MIT — see [LICENSE](LICENSE). Security reporting: [SECURITY.md](SECURITY.md). Changes:
+[CHANGELOG.md](CHANGELOG.md).

@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator
 
@@ -49,7 +50,7 @@ class FfufTool(BaseTool):
     skill = "information_disclosure"
     binary = "ffuf"
     writes_output_file = True
-    success_codes = (0, 1)
+    success_codes = (0,)
     description = (
         "Content discovery: fuzzes a URL containing the FUZZ keyword against a local "
         "wordlist and reports discovered paths with status codes."
@@ -57,16 +58,23 @@ class FfufTool(BaseTool):
     input_model = FfufArgs
 
     def build_argv(self, args: FfufArgs, out_file: str | None = None) -> list[str]:
-        if "FUZZ" not in args.target:
-            raise InvalidToolArguments("ffuf target must contain the FUZZ keyword")
-        if not Path(args.wordlist).is_file():
+        parsed = urlsplit(args.target)
+        if "FUZZ" in parsed.netloc or not ("FUZZ" in parsed.path or "FUZZ" in parsed.query):
+            raise InvalidToolArguments(
+                "ffuf target must contain FUZZ in its path or query, never in its host"
+            )
+        try:
+            wordlist = Path(args.wordlist).expanduser()
+        except RuntimeError as exc:
+            raise InvalidToolArguments(f"could not expand wordlist path: {args.wordlist}") from exc
+        if not wordlist.is_file():
             raise InvalidToolArguments(f"wordlist not found: {args.wordlist}")
         argv = [
             "ffuf",
             "-u",
             args.target,
             "-w",
-            args.wordlist,
+            str(wordlist),
             "-of",
             "json",
             "-o",
@@ -76,6 +84,7 @@ class FfufTool(BaseTool):
             "-t",
             str(args.threads),
             "-s",
+            "-r=false",
             "-X",
             args.method,
         ]
@@ -102,7 +111,7 @@ class FfufTool(BaseTool):
             length = item.get("length")
             words = item.get("words")
             if status in (401, 403):
-                severity = Severity.LOW
+                severity = Severity.INFO
                 title = f"Access-controlled path discovered (HTTP {status})"
             elif status in (200, 204):
                 severity = Severity.INFO

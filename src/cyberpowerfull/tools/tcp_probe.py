@@ -7,6 +7,7 @@ plain TCP connect - no payloads, no fingerprinting beyond the port number.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import socket
 import time
@@ -16,7 +17,8 @@ from pydantic import Field, field_validator
 
 from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.models import Finding, Phase, Severity
-from cyberpowerfull.tools.base import BaseTool, HostInput, _Exec, truncate
+from cyberpowerfull.scope import network_contains
+from cyberpowerfull.tools.base import BaseTool, HostInput, ToolStatus, _Exec, host_port, truncate
 
 DEFAULT_PORTS = [22, 80, 443, 3306, 5432, 6379, 8000, 8080, 8443, 27017]
 
@@ -77,27 +79,67 @@ class TcpProbeTool(BaseTool):
 
     def _execute(self, args: TcpProbeArgs, argv: list[str], policy: ToolPolicy) -> _Exec:
         started = time.perf_counter()
+        deadline = started + min(self.timeout_s, policy.timeout_s)
         open_ports: list[int] = []
         errors: dict[str, str] = {}
+        try:
+            addresses = socket.getaddrinfo(args.target, None, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            return _Exec(status=ToolStatus.ERROR, error=f"tcp_probe DNS lookup failed: {exc}")
+        hosts = list(dict.fromkeys(item[4][0] for item in addresses))
+        denied = [ipaddress.ip_network(item, strict=False) for item in policy.excluded_networks]
+
+        def denied_address(host: str) -> bool:
+            address = ipaddress.ip_address(host.split("%", 1)[0])
+            if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+                address = address.ipv4_mapped
+            return any(network_contains(network, address) for network in denied)
+
+        if args.target == "localhost" and any(
+            not ipaddress.ip_address(host.split("%", 1)[0]).is_loopback for host in hosts
+        ):
+            return _Exec(status=ToolStatus.BLOCKED, error="localhost resolved outside loopback")
+        if any(denied_address(host) for host in hosts):
+            return _Exec(
+                status=ToolStatus.BLOCKED,
+                error="tcp_probe DNS resolved to an excluded network",
+            )
+        if not hosts:
+            return _Exec(status=ToolStatus.ERROR, error="tcp_probe DNS returned no addresses")
+
+        next_connect = started
         for port in args.ports:
-            try:
-                with socket.create_connection((args.target, port), timeout=args.timeout_s):
-                    open_ports.append(port)
-            except OSError as exc:
-                errors[str(port)] = exc.__class__.__name__
-            if time.perf_counter() - started > self.timeout_s:
-                return _Exec(
-                    stdout=json.dumps({"open": open_ports, "errors": errors}),
-                    status=self._status(open_ports),
-                    error="tcp_probe exceeded its total time budget",
-                )
+            for host in hosts:
+                wait = max(0.0, next_connect - time.perf_counter())
+                remaining = deadline - time.perf_counter()
+                if wait >= remaining:
+                    return _Exec(
+                        stdout=json.dumps({"open": open_ports, "errors": errors}),
+                        status=ToolStatus.TIMEOUT,
+                        error="tcp_probe exceeded its total time budget",
+                    )
+                if wait:
+                    time.sleep(wait)
+                remaining = deadline - time.perf_counter()
+                if remaining <= 0:
+                    return _Exec(
+                        stdout=json.dumps({"open": open_ports, "errors": errors}),
+                        status=ToolStatus.TIMEOUT,
+                        error="tcp_probe exceeded its total time budget",
+                    )
+                if policy.max_rps:
+                    next_connect = time.perf_counter() + 1 / policy.max_rps
+                try:
+                    # Connect to the checked address rather than resolving again.
+                    with socket.create_connection(
+                        (host, port), timeout=min(args.timeout_s, remaining)
+                    ):
+                        open_ports.append(port)
+                        errors.pop(str(port), None)
+                        break
+                except OSError as exc:
+                    errors[str(port)] = exc.__class__.__name__
         return _Exec(stdout=json.dumps({"open": open_ports, "errors": errors}))
-
-    @staticmethod
-    def _status(open_ports: list[int]) -> object:
-        from cyberpowerfull.tools.base import ToolStatus
-
-        return ToolStatus.OK if open_ports else ToolStatus.ERROR
 
     def parse(self, args: TcpProbeArgs, output: str, out_file: str | None = None) -> list[Finding]:
         if not output.strip():
@@ -113,16 +155,18 @@ class TcpProbeTool(BaseTool):
             if service:
                 findings.append(
                     self.finding(
-                        title=f"Sensitive service port exposed: {port_int}/tcp ({service})",
-                        severity=Severity.LOW,
-                        confidence=0.6,
+                        title=f"Open TCP port {port_int} (commonly used by {service})",
+                        severity=Severity.INFO,
+                        confidence=0.9,
                         target=args.target,
-                        endpoint=f"{args.target}:{port_int}",
+                        endpoint=host_port(args.target, port_int),
                         evidence=truncate(
-                            f"tcp connect succeeded on {port_int}; service={service}"
+                            f"tcp connect succeeded on {port_int}; {service} is a common "
+                            "port association, not a confirmed service"
                         ),
                         remediation=(
-                            f"Restrict network access to {service} and require authentication."
+                            "Identify the service, restrict access if needed, "
+                            "and require authentication."
                         ),
                     )
                 )
@@ -133,7 +177,7 @@ class TcpProbeTool(BaseTool):
                         severity=Severity.INFO,
                         confidence=0.9,
                         target=args.target,
-                        endpoint=f"{args.target}:{port_int}",
+                        endpoint=host_port(args.target, port_int),
                         evidence=truncate(f"tcp connect succeeded on {port_int}"),
                     )
                 )

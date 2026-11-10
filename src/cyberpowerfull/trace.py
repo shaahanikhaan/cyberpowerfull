@@ -22,6 +22,7 @@ from cyberpowerfull.models import (
     new_id,
     utcnow,
 )
+from cyberpowerfull.storage import write_private_text
 
 TRACE_SCHEMA_VERSION = "1.0"
 
@@ -54,7 +55,12 @@ class Trace(BaseModel):
     schema_version: str = TRACE_SCHEMA_VERSION
     agent: str = AGENT_NAME
     agent_version: str = __version__
-    run_id: str = Field(default_factory=lambda: new_id("run-"))
+    run_id: str = Field(
+        default_factory=lambda: new_id("run-"),
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    )
     model: str = "unknown"
     backend: str = "unknown"
     engagement: str = "unknown"
@@ -123,6 +129,7 @@ class TraceRecorder:
         for finding in findings:
             if finding.id not in known:
                 self._trace.findings.append(finding)
+                known.add(finding.id)
 
     def set_budget(self, budget: BudgetState) -> None:
         self._trace.budget = budget
@@ -145,17 +152,11 @@ class TraceRecorder:
         return self._trace
 
     def save(self, path: str | Path) -> Path:
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self._trace.model_dump_json(indent=2), encoding="utf-8")
-        return target
+        return write_private_text(path, self._trace.model_dump_json(indent=2))
 
 
 def save_trace(trace: Trace, path: str | Path) -> Path:
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(trace.model_dump_json(indent=2), encoding="utf-8")
-    return target
+    return write_private_text(path, trace.model_dump_json(indent=2))
 
 
 def load_trace(path: str | Path) -> Trace:
@@ -169,7 +170,15 @@ def load_trace(path: str | Path) -> Trace:
         payload = json.loads(trace_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise CyberpowerfullError(f"trace is not valid JSON: {trace_path}: {exc}") from exc
-    return Trace.model_validate(payload)
+    except (OSError, UnicodeError) as exc:
+        raise CyberpowerfullError(f"trace could not be read: {trace_path}: {exc}") from exc
+    try:
+        trace = Trace.model_validate(payload)
+    except Exception as exc:
+        raise CyberpowerfullError(f"trace failed validation: {trace_path}: {exc}") from exc
+    if trace.schema_version != TRACE_SCHEMA_VERSION:
+        raise CyberpowerfullError(f"unsupported trace schema version: {trace.schema_version}")
+    return trace
 
 
 def summarize_trace(trace: Trace) -> dict[str, Any]:

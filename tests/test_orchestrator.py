@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-from tests.conftest import FailingLLM, FakeLLM
 
 from cyberpowerfull.brain.attack_tree import AttackTree
 from cyberpowerfull.brain.orchestrator import (
@@ -21,6 +20,7 @@ from cyberpowerfull.errors import PolicyViolation
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import Finding, Phase, Severity
 from cyberpowerfull.tools.base import BaseTool, HostInput, ToolResult, ToolStatus
+from tests.conftest import FailingLLM, FakeLLM
 
 
 class StubTool(BaseTool):
@@ -249,7 +249,7 @@ class TestRunLoop:
         )
         result = orchestrator.run()
         assert result.stop_reason == "budget_exhausted:tokens"
-        assert len(result.trace.steps) == 1
+        assert len(result.trace.steps) == 0
 
     def test_seconds_budget(self, scope) -> None:
         orchestrator, _, _ = build(

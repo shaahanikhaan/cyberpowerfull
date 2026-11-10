@@ -7,7 +7,7 @@ import re
 from pydantic import Field, field_validator
 
 from cyberpowerfull.models import Finding, Phase, Severity
-from cyberpowerfull.tools.base import BaseTool, HostInput, severity_from_text, truncate
+from cyberpowerfull.tools.base import BaseTool, HostInput, host_port, severity_from_text, truncate
 
 _TUNING_RE = re.compile(r"^[0-9a-x]{1,10}$")
 _ITEM = re.compile(r"^\+\s+(?P<body>.+)$", re.MULTILINE)
@@ -20,6 +20,8 @@ _NOISE = (
     "server:",
     "no web server found",
     "host(s) tested",
+    "error:",
+    "scan terminated:",
 )
 _PATH_PREFIX = re.compile(r"^(?P<path>/\S*?):?")
 
@@ -52,6 +54,17 @@ class NiktoTool(BaseTool):
     )
     input_model = NiktoArgs
 
+    def exit_succeeded(self, exit_code: int, stdout: str, stderr: str) -> bool:
+        # Nikto uses 1 for either findings or errors. Only accept it when the
+        # completion summary explicitly reports zero errors.
+        if exit_code == 0:
+            return not re.search(r"^\+\s*ERROR:", stdout, re.MULTILINE | re.IGNORECASE)
+        if exit_code == 1:
+            return bool(re.search(r"\b0\s+error\(s\)", stdout, re.IGNORECASE)) and not re.search(
+                r"^\+\s*ERROR:", stdout, re.MULTILINE | re.IGNORECASE
+            )
+        return False
+
     def build_argv(self, args: NiktoArgs, out_file: str | None = None) -> list[str]:
         argv = [
             "nikto",
@@ -79,7 +92,7 @@ class NiktoTool(BaseTool):
             path_match = _PATH_PREFIX.match(body)
             endpoint = None
             if path_match:
-                endpoint = f"{args.target}:{args.port}{path_match.group('path')}"
+                endpoint = f"{host_port(args.target, args.port)}{path_match.group('path')}"
             findings.append(
                 self.finding(
                     title=truncate(body.rstrip("."), 200),

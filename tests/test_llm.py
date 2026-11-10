@@ -31,8 +31,8 @@ class _FakeResponse:
     def __exit__(self, *exc_info: object) -> bool:
         return False
 
-    def read(self) -> bytes:
-        return self._body
+    def read(self, size: int = -1) -> bytes:
+        return self._body[:size] if size >= 0 else self._body
 
 
 class TestEndpointPolicy:
@@ -109,7 +109,7 @@ class TestOllamaClient:
     def test_decide_returns_decision(self) -> None:
         payload = {"message": {"content": '{"tool": "delegate", "args": {"agent": "recon"}}'}}
         with mock.patch(
-            "cyberpowerfull.brain.llm.urlopen", return_value=_FakeResponse(payload)
+            "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse(payload)
         ) as patched:
             decision = OllamaClient().decide("system", "step", step=2)
         assert decision.tool == "delegate"
@@ -124,7 +124,7 @@ class TestOllamaClient:
 
     def test_unreachable_raises(self) -> None:
         with (
-            mock.patch("cyberpowerfull.brain.llm.urlopen", side_effect=URLError("refused")),
+            mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")),
             pytest.raises(LLMError, match="unreachable"),
         ):
             OllamaClient(max_retries=1).decide("system", "step")
@@ -132,7 +132,7 @@ class TestOllamaClient:
     def test_retries_then_fails(self) -> None:
         with (
             mock.patch(
-                "cyberpowerfull.brain.llm.urlopen", side_effect=URLError("refused")
+                "cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")
             ) as patched,
             pytest.raises(LLMError),
         ):
@@ -142,21 +142,24 @@ class TestOllamaClient:
     def test_bad_body(self) -> None:
         with (
             mock.patch(
-                "cyberpowerfull.brain.llm.urlopen", return_value=_FakeResponse({"unexpected": True})
+                "cyberpowerfull.brain.llm._local_open",
+                return_value=_FakeResponse({"unexpected": True}),
             ),
-            pytest.raises(LLMError, match="empty response"),
+            pytest.raises(LLMError, match="no message object"),
         ):
             OllamaClient().decide("system", "step")
 
     def test_health(self) -> None:
         payload = {"models": [{"name": "qwen3:4b"}, {"name": "llama3:8b"}]}
-        with mock.patch("cyberpowerfull.brain.llm.urlopen", return_value=_FakeResponse(payload)):
+        with mock.patch(
+            "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse(payload)
+        ):
             health = OllamaClient().health()
         assert health["ok"] is True
         assert "qwen3:4b" in health["models"]
 
     def test_health_unreachable(self) -> None:
-        with mock.patch("cyberpowerfull.brain.llm.urlopen", side_effect=URLError("refused")):
+        with mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")):
             health = OllamaClient().health()
         assert health["ok"] is False
         assert "error" in health
@@ -166,7 +169,7 @@ class TestLlamaCppClient:
     def test_decide(self) -> None:
         payload = {"choices": [{"message": {"content": '{"tool": "terminate"}'}}]}
         with mock.patch(
-            "cyberpowerfull.brain.llm.urlopen", return_value=_FakeResponse(payload)
+            "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse(payload)
         ) as patched:
             decision = LlamaCppClient().decide("system", "step")
         assert decision.tool == "terminate"
@@ -175,7 +178,7 @@ class TestLlamaCppClient:
     def test_no_choices(self) -> None:
         with (
             mock.patch(
-                "cyberpowerfull.brain.llm.urlopen", return_value=_FakeResponse({"choices": []})
+                "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse({"choices": []})
             ),
             pytest.raises(LLMError),
         ):
@@ -183,7 +186,9 @@ class TestLlamaCppClient:
 
     def test_health(self) -> None:
         payload = {"data": [{"id": "qwen3-4b"}]}
-        with mock.patch("cyberpowerfull.brain.llm.urlopen", return_value=_FakeResponse(payload)):
+        with mock.patch(
+            "cyberpowerfull.brain.llm._local_open", return_value=_FakeResponse(payload)
+        ):
             assert LlamaCppClient().health()["ok"] is True
 
 
