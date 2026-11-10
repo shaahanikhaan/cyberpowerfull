@@ -4,6 +4,45 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] — Built-in auto agent
+
+No model download, no model server, no setup beyond the install: the default backend is now
+a built-in Python agent that plans and runs the engagement itself, with a live progress
+display in the foreground. The Ollama backend is removed; llama.cpp stays for operators who
+want a local model in the loop. Guardrails did not move: authorization is still recorded
+before anything runs, and inference endpoints are still loopback-only.
+
+### Added
+
+- **Built-in auto agent (`auto`, the default backend)**: a 19-step ladder with 7
+  escalations, a run journal, and delegation to the existing worker agents. It needs no
+  model, spends no tokens, and calls no external tools (`brain/agent.py`).
+- **Live foreground display**: per-step progress with a spinner on TTYs and a plain
+  `[01/12]` fallback otherwise (plus `NO_COLOR` support); `--json` keeps machine output
+  on stdout and progress on stderr (`live.py`, `step_start` hooks in the orchestrator,
+  playbook runner, and lab).
+- **Result payloads with signal**: worker results carry the top finding titles and top
+  severity so the live display and the trace show what matters, not just `ok`.
+
+### Changed
+
+- **Faster runs**: one-pass parallel groups raised to 4/8/12, playbook argument building
+  and tool descriptions cached, identical duplicate invocations skipped.
+- **testssl.sh wrapper rewritten** against the testssl.sh v3.2.5 source: protocols-only
+  by default (`-p`), full run emits no check flag, `-t` is always a STARTTLS protocol
+  pair, `--severity`/`--warnings batch`/`--quiet`/`--color 0` enforced, bounded connect
+  and openssl timeouts, `WARN` maps to medium, telemetry severities skipped, and only
+  exit `0` counts as success.
+- **URL targets normalized**: `https://host:port/path` scopes the host while keeping the
+  full URL for web builders; scheme-less `host/path` input no longer leaks a path into
+  the scope.
+
+### Removed
+
+- **Ollama backend** (`OllamaClient`, `ollama:` specs, setup docs). Pointing `--llm` at an
+  `ollama:` spec now fails with a migration error instead of silently doing something
+  else. Use the default `auto` agent or `--llm llamacpp:model` with `llama-server`.
+
 ## [4.0.0] — One command
 
 The first run is now one line: `cpf TARGET` (or `./run.sh TARGET` straight after cloning).

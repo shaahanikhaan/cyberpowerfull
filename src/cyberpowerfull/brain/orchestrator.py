@@ -604,9 +604,7 @@ class Orchestrator:
             exhausted = (
                 "seconds"
                 if budget.seconds_used >= budget.max_seconds
-                else "tokens"
-                if uses_tokens and budget.tokens_used >= budget.max_tokens
-                else None
+                else "tokens" if uses_tokens and budget.tokens_used >= budget.max_tokens else None
             )
             if exhausted is not None:
                 record = self._record_step(

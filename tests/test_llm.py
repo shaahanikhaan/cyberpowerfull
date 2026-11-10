@@ -252,7 +252,7 @@ class TestBuildClient:
         assert isinstance(build_client("auto:auto-1", ModelConfig()), AutoAgent)
 
     def test_ollama_spec_explains_removal(self) -> None:
-        with pytest.raises(LLMError, match="removed in 5.0"):
+        with pytest.raises(LLMError, match=r"removed in 5\.0"):
             build_client("ollama:qwen3:4b", ModelConfig())
 
     def test_llamacpp_default_endpoint(self) -> None:

@@ -232,9 +232,7 @@ class LiveDisplay:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._spin, name="cpf-live", daemon=True
-        )
+        self._thread = threading.Thread(target=self._spin, name="cpf-live", daemon=True)
         self._thread.start()
 
     def _stop_thread_locked(self) -> None:

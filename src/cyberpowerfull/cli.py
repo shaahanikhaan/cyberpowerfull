@@ -22,13 +22,13 @@ from cyberpowerfull.config import RunConfig
 from cyberpowerfull.errors import CyberpowerfullError, LLMError
 from cyberpowerfull.intel.models import Component
 from cyberpowerfull.inventory import build_toolchain, install_hint
-from cyberpowerfull.live import LiveDisplay
 from cyberpowerfull.knowledge import (
     nmap_script_paths,
     nuclei_template_paths,
     search_exploit_db,
     wordlist_summary,
 )
+from cyberpowerfull.live import LiveDisplay
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import new_id
 from cyberpowerfull.playbook import PlaybookRunner, describe_playbooks, get_playbook

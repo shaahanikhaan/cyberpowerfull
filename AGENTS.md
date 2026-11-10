@@ -23,8 +23,9 @@ For a real engagement, a scope file is mandatory — the agent exits `3` without
 cyberpowerfull --init-scope scope.json --engagement NAME --targets HOST \
     --authorize --authorization-ref "SOW-XXXX"
 
-cyberpowerfull --scope scope.json --target HOST --playbook recon     # no model
-cyberpowerfull --scope scope.json --target HOST --llm ollama:qwen3:4b # model loop
+cyberpowerfull --scope scope.json --target HOST --playbook recon  # deterministic playbook
+cyberpowerfull --scope scope.json --target HOST                  # built-in auto agent (default)
+cyberpowerfull --scope scope.json --target HOST --llm llamacpp:model  # local model loop
 ```
 
 Rules for using it:

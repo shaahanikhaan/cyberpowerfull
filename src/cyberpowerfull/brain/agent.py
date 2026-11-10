@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cyberpowerfull.brain.orchestrator import WORKER_TOOL_ALLOWLIST
@@ -218,10 +219,8 @@ class AutoAgent:
             if "://" in host:
                 from urllib.parse import urlsplit
 
-                try:
+                with suppress(ValueError):
                     host = urlsplit(host).hostname or host
-                except ValueError:
-                    pass
             facts = Facts(target=host or self._raw_target)
             if self._raw_target.startswith(("http://", "https://")):
                 facts.add_url(self._raw_target)
@@ -297,9 +296,9 @@ class AutoAgent:
         if "tech=" in lowered:
             for token in text.split("tech=", 1)[1].split(",")[:6]:
                 facts.add_tech(token.strip())
-        if text.startswith("Subdomain discovered:"):
-            facts.add_subdomain(text.split(":", 1)[1].strip())
-        elif "vhost" in lowered and text.startswith("Subdomain/vhost discovered:"):
+        if text.startswith("Subdomain discovered:") or (
+            "vhost" in lowered and text.startswith("Subdomain/vhost discovered:")
+        ):
             facts.add_subdomain(text.split(":", 1)[1].strip())
 
     # -- planning --------------------------------------------------------
@@ -591,9 +590,11 @@ class AutoAgent:
                         {
                             "target": facts.primary_url,
                             "severity": ["low", "medium", "high", "critical"],
-                            **({"tags": ["api", "graphql", "swagger", "exposure", "cors"]}
-                               if self._api_evidence(facts)
-                               else {}),
+                            **(
+                                {"tags": ["api", "graphql", "swagger", "exposure", "cors"]}
+                                if self._api_evidence(facts)
+                                else {}
+                            ),
                             "rate_limit": 20,
                             "concurrency": 10,
                         }
@@ -784,4 +785,4 @@ class AutoAgent:
         return ". ".join(parts)
 
 
-__all__ = ["AutoAgent", "DEEP_BUDGET_ITERATIONS", "MAX_CONSECUTIVE_FAILURES"]
+__all__ = ["DEEP_BUDGET_ITERATIONS", "MAX_CONSECUTIVE_FAILURES", "AutoAgent"]

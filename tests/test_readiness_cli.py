@@ -144,7 +144,7 @@ def test_cli_preserves_original_target_url(tmp_path: Path, scope_file: Path, cap
     assert main([*args, "--json"]) == 0
     captured = capsys.readouterr()
     assert json.loads(captured.out)["target"] == "http://127.0.0.1:8000/api?q=1"
-    assert "[01]" in captured.err  # progress never pollutes JSON stdout
+    assert "[01/12]" in captured.err  # progress never pollutes JSON stdout
 
 
 def test_repeated_runs_share_database_without_sharing_evidence(
@@ -173,7 +173,7 @@ def test_repeated_runs_share_database_without_sharing_evidence(
             assert main([*run_args(tmp_path, scope_file, path), "--json"]) == 0
             captured = capsys.readouterr()
             traces.append(json.loads(captured.out))
-            assert "[01]" in captured.err
+            assert "[01/12]" in captured.err
     assert traces[0]["run_id"] != traces[1]["run_id"]
     assert len(traces[0]["findings"]) == len(traces[1]["findings"]) == 1
     assert traces[1]["memory_stats"]["findings"] == 1
@@ -292,7 +292,7 @@ def test_loopback_model_redirect_is_never_followed() -> None:
     class Sink(QuietHandler):
         def do_POST(self):
             escaped.append(self.path)
-            self.reply({"message": {"content": '{"tool":"terminate"}'}})
+            self.reply({"choices": [{"message": {"content": '{"tool":"terminate"}'}}]})
 
     with local_server(Sink) as sink_port:
 
@@ -303,7 +303,7 @@ def test_loopback_model_redirect_is_never_followed() -> None:
                 self.end_headers()
 
         with local_server(Redirect) as redirect_port:
-            client = OllamaClient(endpoint=f"http://127.0.0.1:{redirect_port}", max_retries=1)
+            client = LlamaCppClient(endpoint=f"http://127.0.0.1:{redirect_port}", max_retries=1)
             with pytest.raises(LLMError, match="HTTP error 307"):
                 client.decide("private scope", "private evidence")
     assert escaped == []
@@ -321,15 +321,15 @@ def test_model_requests_ignore_proxy_environment(monkeypatch) -> None:
     class Model(QuietHandler):
         def do_GET(self):
             model_hits.append(self.path)
-            self.reply({"models": [{"name": "qwen3:4b"}]})
+            self.reply({"data": [{"id": "lab-model"}]})
 
     with local_server(Proxy) as proxy_port, local_server(Model) as model_port:
         monkeypatch.setenv("HTTP_PROXY", f"http://127.0.0.1:{proxy_port}")
         monkeypatch.setenv("http_proxy", f"http://127.0.0.1:{proxy_port}")
         monkeypatch.setenv("NO_PROXY", "")
         monkeypatch.setenv("no_proxy", "")
-        assert OllamaClient(endpoint=f"http://127.0.0.1:{model_port}").health()["ok"]
-    assert model_hits == ["/api/tags"]
+        assert LlamaCppClient(endpoint=f"http://127.0.0.1:{model_port}").health()["ok"]
+    assert model_hits == ["/v1/models"]
     assert proxy_hits == []
 
 
@@ -341,7 +341,7 @@ def test_real_http_model_and_tcp_service_complete_run(
 
     class Model(QuietHandler):
         def do_GET(self):
-            self.reply({"models": [{"name": "qwen3:4b"}]})
+            self.reply({"data": [{"id": "lab-model"}]})
 
         def do_POST(self):
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -357,7 +357,7 @@ def test_real_http_model_and_tcp_service_complete_run(
                 }
             else:
                 decision = {"tool": "terminate", "reason": "lab check complete"}
-            self.reply({"message": {"content": json.dumps(decision)}})
+            self.reply({"choices": [{"message": {"content": json.dumps(decision)}}]})
 
     with local_server(Model) as port:
         port_holder.append(port)
@@ -365,11 +365,12 @@ def test_real_http_model_and_tcp_service_complete_run(
         monkeypatch.delenv("CYBERPOWERFULL_LLM", raising=False)
         path = stream(tmp_path / "unused.json", [])
         args = run_args(tmp_path, scope_file, path)
-        args[args.index("--llm") + 1] = "ollama:qwen3:4b"
+        args[args.index("--llm") + 1] = "llamacpp:lab-model"
         assert main([*args, "--json"]) == 0
         trace = json.loads(capsys.readouterr().out)
     assert len(requests) == 2
-    assert requests[0]["format"] == "json" and requests[0]["think"] is False
+    assert requests[0]["response_format"] == {"type": "json_object"}
+    assert requests[0]["stream"] is False
     assert trace["stop_reason"] == "agent_terminated"
     assert trace["steps"][0]["result"]["status"] == "ok"
     assert trace["findings"] and str(port) in trace["findings"][0]["endpoint"]
@@ -433,7 +434,7 @@ def test_interrupted_model_response_is_recorded_as_inference_failure(
 ) -> None:
     path = stream(tmp_path / "decisions.json", [])
     args = run_args(tmp_path, scope_file, path)
-    args[args.index("--llm") + 1] = "ollama:qwen3:4b"
+    args[args.index("--llm") + 1] = "llamacpp:lab-model"
     response = mock.MagicMock()
     response.__enter__.return_value = response
     response.read.side_effect = error

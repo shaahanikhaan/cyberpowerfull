@@ -41,8 +41,11 @@ def _state(
 
 
 def _result(
-    tool: str, status: str = "ok", observations: list[str] | None = None,
-    titles: list[str] | None = None, error: str | None = None,
+    tool: str,
+    status: str = "ok",
+    observations: list[str] | None = None,
+    titles: list[str] | None = None,
+    error: str | None = None,
 ) -> dict[str, Any]:
     return {
         "tool": tool,
@@ -89,11 +92,17 @@ class TestLadder:
         tools = [d.args["tool"] for d in decisions if d.tool == "delegate"]
         assert tools[0] == "tcp_probe"
         assert "httpx" in tools[1:3]
-        assert len({(d.args["tool"], json.dumps(d.args["args"], sort_keys=True)) for d in decisions if d.tool == "delegate"}) == len(tools)
+        seen = {
+            (d.args["tool"], json.dumps(d.args["args"], sort_keys=True))
+            for d in decisions
+            if d.tool == "delegate"
+        }
+        assert len(seen) == len(tools)
 
     def test_open_ports_steer_nmap_to_services(self, agent: AutoAgent) -> None:
         last = _result(
-            "tcp_probe", observations=["tcp_probe open=[22, 80, 443]"],
+            "tcp_probe",
+            observations=["tcp_probe open=[22, 80, 443]"],
             titles=["Open TCP port 22/tcp (ssh)"],
         )
         # Drain ladder until nmap is reached.
@@ -155,9 +164,7 @@ class TestEscalation:
         first = agent.decide("system", _state(step=2, last=last), step=2)
         assert first.args["tool"] == "sqlmap"
         assert "?q=" in first.args["args"]["target"]
-        second = agent.decide(
-            "system", _state(step=3, last=_result("sqlmap")), step=3
-        )
+        second = agent.decide("system", _state(step=3, last=_result("sqlmap")), step=3)
         assert second.args["tool"] == "dalfox"
 
     def test_tls_port_becomes_testssl(self, agent: AutoAgent) -> None:
@@ -195,9 +202,7 @@ class TestEscalation:
 class TestEligibility:
     def test_missing_binary_is_retired(self, agent: AutoAgent) -> None:
         agent.decide("system", _state(step=1), step=1)
-        agent.decide(
-            "system", _state(step=2, last=_result("nmap", status="missing")), step=2
-        )
+        agent.decide("system", _state(step=2, last=_result("nmap", status="missing")), step=2)
         decisions = _drive(agent, 20)
         tools = [d.args["tool"] for d in decisions if d.tool == "delegate"]
         assert "nmap" not in tools
@@ -212,9 +217,7 @@ class TestEligibility:
 
     def test_blocked_is_retired_immediately(self, agent: AutoAgent) -> None:
         agent.decide("system", _state(step=1), step=1)
-        agent.decide(
-            "system", _state(step=2, last=_result("masscan", status="blocked")), step=2
-        )
+        agent.decide("system", _state(step=2, last=_result("masscan", status="blocked")), step=2)
         assert "masscan" in agent._dead_tools
 
     def test_capability_gates_prefilter(self, agent: AutoAgent, scope) -> None:

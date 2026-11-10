@@ -134,7 +134,7 @@ class TestReadme:
 
     def test_badges(self) -> None:
         assert "badge.svg" in README
-        assert "version-4.0.0" in README
+        assert "version-5.0.0" in README
         assert "actions/workflows/ci.yml/badge.svg" in README
 
     @pytest.mark.parametrize("term", HYPE_TERMS)

@@ -16,7 +16,7 @@ want reproducible automation with no model at all. Plus a live inventory of the 
 capability-gated aggression, append-only memory, an offline knowledge base (Exploit-DB, nuclei
 templates, NSE scripts), and no cloud API key, no Docker for the core loop, and no chat surface.
 
-[![version](https://img.shields.io/badge/version-4.0.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-5.0.0-blue.svg)](CHANGELOG.md)
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
@@ -24,7 +24,7 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 
 | Property | Value |
 |---|---|
-| Reasoning | local open-weight model (Qwen3-4B / equivalent) via Ollama or llama.cpp — optional |
+| Reasoning | built-in auto agent (default, no model) or a local model via llama.cpp — optional |
 | Automation | 6 deterministic playbooks, 34 ordered steps, parallel groups, fact-driven adaptivity |
 | Typed tools | 29 (22 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
@@ -123,7 +123,7 @@ Four components, strict separation, a deterministic control plane around an opti
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ LAYER 1 — REASONING (optional: local model, e.g. Qwen3-4B via Ollama)        │
+│ LAYER 1 — REASONING (built-in auto agent; optional local model)          │
 │   system_prompt.jinja → TDA → EGATS node → one JSON decision per step        │
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 │  {"step": 3, "tool": "delegate", "args": {…}}
@@ -194,7 +194,7 @@ src/cyberpowerfull/
 ├── brain/
 │   ├── system_prompt.jinja # the behavioural operating system
 │   ├── prompt.py           # Jinja2 renderer (StrictUndefined)
-│   ├── llm.py              # loopback-only Ollama / llama.cpp / replay clients
+│   ├── llm.py              # auto agent (default); llama.cpp + replay backends
 │   ├── tda.py              # Task Difficulty Assessment
 │   ├── attack_tree.py      # EGATS state machine
 │   └── orchestrator.py     # RootAgent, WorkerAgent, Orchestrator
@@ -257,7 +257,7 @@ cpf example.com --i-am-authorized --authorization-ref SOW-2026-014   # non-inter
 | to install the scanner set (Kali/Debian) | `./run.sh --install-tools` |
 | to install the scanners quietly, no sudo surprises | review `Makefile`, then `make tools` |
 | a specific playbook against a real target | `cpf example.com --playbook web` |
-| the model-driven reasoning loop | `ollama serve & ollama pull qwen3:4b`, then `cpf example.com --ai` |
+| the autonomous agent loop | `cpf example.com --ai` (add `--llm llamacpp:model` for a local model) |
 | to prove a run happened | open `artifacts/report-*.md`, or `cyberpowerfull --replay traces/latest.json` |
 | to wire it into CI | read `artifacts/findings-*.sarif` with any SARIF viewer or GitHub code scanning |
 
@@ -308,11 +308,13 @@ deterministic; `examples/trace-example.json` is the trace it produces.
 ### Use a local model
 
 ```bash
-ollama serve & ollama pull qwen3:4b              # Ollama backend (default)
-llama-server -m qwen3-4b-instruct.gguf -c 32768  # llama.cpp backend, then --llm llamacpp:qwen3
+llama-server -m model.gguf -c 32768  # llama.cpp backend, then --llm llamacpp:model
 
-python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --llm ollama:qwen3:4b
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --llm llamacpp:model
 ```
+
+No model is needed by default: the built-in auto agent (`auto`, the default backend) plans
+and runs the engagement itself. A local model only swaps the decision source.
 
 Before pointing it at a real engagement, copy `scope.example.json`, set `authorized` to `true`
 only after you hold written authorization, replace the targets, and grant only the capabilities
@@ -397,7 +399,7 @@ Three adapters drive real third-party agents. Each requires the engagement capab
 ```bash
 cyberpowerfull --agents                          # live availability check
 export PENTAGI_URL=https://127.0.0.1:8443 PENTAGI_API_TOKEN=…
-cyberpowerfull --scope scope.json --target app.example.test --llm ollama:qwen3:4b
+cyberpowerfull --scope scope.json --target app.example.test --llm llamacpp:model
 ```
 
 The model can select them like any other tool (`delegate → external → strix`). Their findings are
@@ -657,8 +659,8 @@ difficulty, an explicit `terminate`, or a negative-cache hit on the chosen invoc
 
 | Spec | Backend | Notes |
 |---|---|---|
-| `ollama:qwen3:4b` | Ollama `/api/chat` | default; `format: json` enforced |
-| `llamacpp:qwen3` | llama.cpp `/v1/chat/completions` | `response_format: json_object` |
+| `auto` | built-in auto agent | default; no model, no tokens, no server |
+| `llamacpp:model` | llama.cpp `/v1/chat/completions` | `response_format: json_object` |
 | `replay:path.json` | recorded decision stream | deterministic reproduction, no model |
 
 Any non-loopback endpoint is rejected with exit code `5` before a request is sent. There is no
