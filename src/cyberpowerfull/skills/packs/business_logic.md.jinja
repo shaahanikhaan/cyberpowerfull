@@ -1,0 +1,17 @@
+{# Skill pack: business_logic #}
+## Skill: Business Logic Abuse
+applies_when: Use when value, entitlement, or workflow state is controlled by the client.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - price, quantity, discount, coupon, or role fields in requests
+  - multi-step checkout, refund, or approval workflows
+probe_order:
+  1. Map the intended workflow from observed requests
+  2. Replay steps out of order, skip steps, and repeat steps
+  3. Submit negative, zero, fractional, and boundary values for monetary fields
+validation_criteria:
+  - a state or value outcome the business rules forbid
+evidence_required:
+  - the request sequence and the resulting account state

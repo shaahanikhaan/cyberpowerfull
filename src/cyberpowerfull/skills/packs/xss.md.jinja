@@ -1,0 +1,17 @@
+{# Skill pack: xss #}
+## Skill: Cross-Site Scripting
+applies_when: Use when user input is reflected or stored in HTML, attributes, or script context.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - reflected search terms, error messages, profile fields, redirect parameters
+  - missing output encoding headers or a permissive Content-Security-Policy
+probe_order:
+  1. Inject a benign marker and locate the reflection context
+  2. Inject context-appropriate canary payloads per reflection point
+  3. Confirm with dalfox and record the exact payload
+validation_criteria:
+  - payload executes in a browser context (dalfox type V) or is stored and returned unencoded
+evidence_required:
+  - URL, parameter, payload, and the raw response snippet containing the payload

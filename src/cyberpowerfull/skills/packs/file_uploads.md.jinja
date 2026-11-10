@@ -1,0 +1,19 @@
+{# Skill pack: file_uploads #}
+## Skill: File Upload
+applies_when: Use when the application accepts files.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - avatar, document, import, or attachment endpoints
+  - extension, MIME, magic-byte, or filename sanitisation gaps
+probe_order:
+  1. Upload an allowed type and record the stored path
+  2. Test extension handling, content-type spoofing, and double extensions
+  3. Test whether the stored file is served and rendered as executable content
+validation_criteria:
+  - a file with a disallowed type is stored and served
+evidence_required:
+  - upload request, stored path, retrieval response
+constraints:
+  - benign payloads only (text markers); no webshells

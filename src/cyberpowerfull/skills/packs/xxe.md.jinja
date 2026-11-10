@@ -1,0 +1,16 @@
+{# Skill pack: xxe #}
+## Skill: XML External Entity
+applies_when: Use when the target parses XML, SVG, SOAP, or office documents.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - XML content types, file upload of XML/SVG/DOCX, SOAP endpoints
+probe_order:
+  1. Submit a minimal XML body with a DOCTYPE and internal entity
+  2. Test local file entity resolution against an in-scope file path
+  3. Test parameter entities only when the parser is confirmed vulnerable
+validation_criteria:
+  - the response contains file content or out-of-band interaction evidence
+evidence_required:
+  - the XML payload and the response or callback log

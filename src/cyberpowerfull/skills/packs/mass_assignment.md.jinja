@@ -1,0 +1,16 @@
+{# Skill pack: mass_assignment #}
+## Skill: Mass Assignment
+applies_when: Use when request bodies map directly onto internal objects.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - JSON bodies with a subset of model fields; role or status fields present in responses
+probe_order:
+  1. Capture the legitimate update request
+  2. Add privileged fields (role, is_admin, tenant, verified, balance)
+  3. Read the object back to confirm persistence
+validation_criteria:
+  - an added field is accepted and persisted
+evidence_required:
+  - update request, read-back response

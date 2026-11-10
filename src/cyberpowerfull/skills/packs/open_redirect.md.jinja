@@ -1,0 +1,15 @@
+{# Skill pack: open_redirect #}
+## Skill: Open Redirect
+applies_when: Use when a parameter controls a post-action redirect.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - next, redirect, return, continue, callback, or domain parameters
+probe_order:
+  1. Set the parameter to an in-scope alternate host
+  2. Test scheme-relative, absolute, and encoded variants
+validation_criteria:
+  - Location header points to a host outside the intended allowlist
+evidence_required:
+  - request and the full Location header

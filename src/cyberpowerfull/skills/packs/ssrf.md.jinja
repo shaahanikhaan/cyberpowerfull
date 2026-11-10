@@ -1,0 +1,19 @@
+{# Skill pack: ssrf #}
+## Skill: Server-Side Request Forgery
+applies_when: Use when the server fetches URLs supplied by the client.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - url, webhook, image, import, or proxy parameters
+  - features that render remote content or resolve user-supplied hostnames
+probe_order:
+  1. Supply an in-scope collaborator host you control within the engagement lab
+  2. Observe outbound request timing and response differences
+  3. Test localhost, 127.0.0.1, and decimal/octal encodings only against in-scope hosts
+validation_criteria:
+  - the target server issues a request to a host it should not reach
+evidence_required:
+  - request payload, listener log line, and the affected parameter
+constraints:
+  - no metadata endpoints, no internal ranges, no third-party hosts

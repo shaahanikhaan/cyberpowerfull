@@ -1,0 +1,17 @@
+{# Skill pack: information_disclosure #}
+## Skill: Information Disclosure
+applies_when: Use when responses leak versions, paths, secrets, or internal topology.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - verbose errors, stack traces, debug endpoints, source maps
+  - server banners, technology versions, directory listings, backup files
+probe_order:
+  1. Fingerprint the stack with httpx and nmap
+  2. Request well-known debug, backup, and configuration paths from a local wordlist
+  3. Inspect headers and error bodies for secrets
+validation_criteria:
+  - a concrete secret, version, or internal path is returned
+evidence_required:
+  - the exact response excerpt and status code

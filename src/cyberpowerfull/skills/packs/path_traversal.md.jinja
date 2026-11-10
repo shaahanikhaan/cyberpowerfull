@@ -1,0 +1,16 @@
+{# Skill pack: path_traversal #}
+## Skill: Path Traversal
+applies_when: Use when file names or paths are supplied by the client.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - download, export, template, log, or image parameters containing paths
+probe_order:
+  1. Supply a benign relative path and observe normalisation
+  2. Supply traversal sequences with URL, double-URL, and unicode encodings
+  3. Target one in-scope file that must not be readable
+validation_criteria:
+  - content of a file outside the intended directory is returned
+evidence_required:
+  - payload, response headers, and the returned content signature
