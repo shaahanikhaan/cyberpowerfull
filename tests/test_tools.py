@@ -154,6 +154,16 @@ class TestNucleiTool:
         assert "-no-interactsh" in argv
         assert argv[argv.index("-tags") + 1] == "cve"
 
+    def test_build_argv_carries_throughput_and_error_budgets(self) -> None:
+        tool = NucleiTool()
+        argv = tool.build_argv(
+            tool.validate({"target": "http://127.0.0.1", "bulk_size": 40, "max_host_error": 10})
+        )
+        assert argv[argv.index("-bs") + 1] == "40"
+        assert argv[argv.index("-mhe") + 1] == "10"
+        assert argv[argv.index("-c") + 1] == "10"
+        assert NucleiTool.timeout_s == 1800  # full-store runs need a long budget
+
     def test_rejects_bad_template_path(self) -> None:
         with pytest.raises(InvalidToolArguments):
             NucleiTool().validate({"target": "http://127.0.0.1", "templates": "../../etc/passwd"})

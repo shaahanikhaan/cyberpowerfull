@@ -210,7 +210,23 @@ class TestBuildToolchain:
         assert install_hint("does-not-exist") is None
 
     def test_external_agents_are_detected_from_environment(self, monkeypatch) -> None:
-        monkeypatch.setenv("PENTAGI_URL", "https://127.0.0.1:8443")
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
+        monkeypatch.setenv("PENTAGI_API_TOKEN", "token")
+        with _which_map({"strix": "/usr/local/bin/strix", "docker": "/usr/bin/docker"}):
+            toolchain = build_toolchain(
+                versions=False,
+                include_wordlists=False,
+                wordlist_roots=[],
+                share_dirs={},
+            )
+        assert toolchain.external_agents["pentagi"]["available"] is True
+        assert toolchain.external_agents["pentagi"]["token_configured"] is True
+        assert toolchain.external_agents["strix"]["available"] is True
+        assert toolchain.external_agents["sn1per"]["available"] is False
+
+    def test_external_agents_need_their_prerequisites(self, monkeypatch) -> None:
+        # URL without a token, strix without docker: present but not runnable.
+        monkeypatch.setenv("PENTAGI_URL", "http://127.0.0.1:8080")
         monkeypatch.delenv("PENTAGI_API_TOKEN", raising=False)
         with _which_map({"strix": "/usr/local/bin/strix"}):
             toolchain = build_toolchain(
@@ -219,7 +235,7 @@ class TestBuildToolchain:
                 wordlist_roots=[],
                 share_dirs={},
             )
-        assert toolchain.external_agents["pentagi"]["available"] is True
+        assert toolchain.external_agents["pentagi"]["available"] is False
         assert toolchain.external_agents["pentagi"]["token_configured"] is False
-        assert toolchain.external_agents["strix"]["available"] is True
-        assert toolchain.external_agents["sn1per"]["available"] is False
+        assert toolchain.external_agents["strix"]["available"] is False
+        assert toolchain.external_agents["strix"]["docker_present"] is False

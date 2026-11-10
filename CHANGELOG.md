@@ -4,6 +4,42 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] — Sn1per-style UX, self-update, verified agent integrations
+
+### Added
+
+- **`-t` and `-m`/`--mode` short flags**: `cpf example.com -m web` runs one area with the
+  scope derived automatically; `-m` is an alias for `--playbook` and the profile keeps its
+  budgets. `--playbook` with `cpf TARGET` used to be silently ignored — it now selects the
+  plan, and an unknown mode fails with exit `8` before any attestation.
+- **`cyberpowerfull --update`**: pulls the git checkout the running copy was installed from
+  and reinstalls it, then exits without scanning. Refuses a dirty tree unless `--force` is
+  given, explains a missing upstream branch, and never elevates itself (a system-wide install
+  gets the exact `sudo` command that finishes the reinstall).
+
+### Fixed
+
+- **PentAGI rewritten against the real v2.2.0 API**: GraphQL `createFlow(modelProvider, input)`
+  first, REST `POST /api/v1/flows/` second; polls `flow(flowId:)`; reads results from
+  `tasks(flowId:)` (there is no `report` field and no `/report` route); `waiting` stops with
+  instructions instead of hanging; HTTP 401 names the token/salt fix.
+- **Sn1per modes verified against 9.2**: `discover` removed (needs a CIDR `HostInput` cannot
+  express); `port`/`webporthttp`/`webporthttps` require `-p` up front (Sn1per exits 0 on the
+  no-port no-op); a non-root run reports blocked with the fix instead of an empty result.
+- **Strix 1.7.1**: a missing Docker CLI, missing `STRIX_LLM`, or a model-connection failure
+  stops with the fix spelled out; report parsing covers the `./strix_runs/<run>/` layout.
+- **Nuclei 3.11.1**: bulk size and max host errors are configurable (`-bs`, `-mhe`); web and
+  API playbooks use focused template tags instead of the full sweep.
+- **`--agents` availability now means runnable**: Strix needs its binary *and* Docker, PentAGI
+  needs URL *and* token, Sn1per needs its binary *and* root.
+- **`--ai` with `-m`/`--playbook` is now a usage error**: each path used to silently ignore
+  one of the two.
+
+### Docs
+
+- `docs/INTEGRATIONS.md` corrected (PentAGI flow, Sn1per mode list, Strix report paths); the
+  default `PENTAGI_URL` is now `http://127.0.0.1:8080` (upstream default port, TLS off).
+
 ## [5.0.1] — Missing-tool experience
 
 Real-target runs on a bare host drowned the operator in missing-binary noise, and the

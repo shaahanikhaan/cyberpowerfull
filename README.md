@@ -16,7 +16,7 @@ want reproducible automation with no model at all. Plus a live inventory of the 
 capability-gated aggression, append-only memory, an offline knowledge base (Exploit-DB, nuclei
 templates, NSE scripts), and no cloud API key, no Docker for the core loop, and no chat surface.
 
-[![version](https://img.shields.io/badge/version-5.0.1-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-5.1.0-blue.svg)](CHANGELOG.md)
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
@@ -246,6 +246,7 @@ Already installed (`pipx install cyberpowerfull` or `pip install -e .`)? Use `cp
 cpf example.com                  # standard pass
 cpf example.com --profile quick   # surface map only, ~5-10 minutes
 cpf example.com --profile deep    # two-hour budget, wider parallelism
+cpf example.com -m web            # one area only: recon, web, network, stealth, api, full
 cpf example.com --plan            # print the plan, send nothing
 cpf example.com --i-am-authorized --authorization-ref SOW-2026-014   # non-interactive
 ```
@@ -256,7 +257,7 @@ cpf example.com --i-am-authorized --authorization-ref SOW-2026-014   # non-inter
 | to know what this host can run | `./run.sh --doctor` |
 | to install the scanner set (Kali/Debian) | `./run.sh --install-tools` |
 | to install the scanners quietly, no sudo surprises | review `Makefile`, then `make tools` |
-| a specific playbook against a real target | `cpf example.com --playbook web` |
+| a specific playbook against a real target | `cpf example.com -m web` (`--mode`/`--playbook` are one flag) |
 | the autonomous agent loop | `cpf example.com --ai` (add `--llm llamacpp:model` for a local model) |
 | to prove a run happened | open `artifacts/report-*.md`, or `cyberpowerfull --replay traces/latest.json` |
 | to wire it into CI | read `artifacts/findings-*.sarif` with any SARIF viewer or GitHub code scanning |
@@ -376,6 +377,8 @@ Adaptivity is deterministic and evidence-based:
 ```bash
 cyberpowerfull --scope scope.json --target app.example.test --playbook web --parallel 4
 cyberpowerfull --scope scope.json --target 10.0.0.5 --playbook network --max-steps 20
+cpf -t app.example.test -m web --scope scope.json   # short flags; the scope file stays required
+cpf app.example.test -m web                         # ...or derive the scope automatically
 cyberpowerfull --list-playbooks
 ```
 
@@ -393,12 +396,12 @@ Three adapters drive real third-party agents. Each requires the engagement capab
 | Adapter | How it runs | What is parsed | Host requirements |
 |---|---|---|---|
 | `strix` | `strix -n -t <target> --scan-mode <mode> --max-budget <usd> --max-turns <n>` | console output + report files under `strix_runs/` | `pipx install strix-agent`, Docker, `STRIX_LLM`, `LLM_API_KEY` |
-| `pentagi` | GraphQL `createFlow` mutation, then poll `flow(id)`; REST fallback | `report` field, REST report body, or prose | running PentAGI, `PENTAGI_URL`, `PENTAGI_API_TOKEN` |
+| `pentagi` | GraphQL `createFlow`, poll `flow(flowId:)`; REST fallback | task results (`tasks`), or the last flow state | running PentAGI, `PENTAGI_URL`, `PENTAGI_API_TOKEN` |
 | `sn1per` | `sniper -t <target> -m <mode> -w <workspace>` | real loot files under `/usr/share/sniper/loot/<workspace>` | `sn1per` installed (root) |
 
 ```bash
 cyberpowerfull --agents                          # live availability check
-export PENTAGI_URL=https://127.0.0.1:8443 PENTAGI_API_TOKEN=…
+export PENTAGI_URL=http://127.0.0.1:8080 PENTAGI_API_TOKEN=…
 cyberpowerfull --scope scope.json --target app.example.test --llm llamacpp:model
 ```
 
@@ -460,6 +463,9 @@ python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --playbook ne
 
 # Inspect what the model is told (regenerate the system prompt)
 python -m cyberpowerfull.cli --render-prompt --scope scope.json --target 127.0.0.1
+
+# Update this copy from the checkout it was installed from (pull + reinstall, no scan)
+python -m cyberpowerfull.cli --update
 
 # Catalogues
 python -m cyberpowerfull.cli --list-tools

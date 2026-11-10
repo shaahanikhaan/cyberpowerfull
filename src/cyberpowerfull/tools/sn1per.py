@@ -40,11 +40,12 @@ from cyberpowerfull.tools.extract import extract_report_findings, merge_findings
 
 #: Single-target modes verified in modes/*.sh (``if [[ "$MODE" = "<mode>" ]]``).
 #: Mass modes (airstrike, nuke, flyover, mass*) need ``-f targets.txt`` and are
-#: out of scope for a single-target typed tool.
+#: out of scope for a single-target typed tool; ``discover`` needs a CIDR
+#: (``sniper -t <CIDR> -m discover``) and HostInput cannot express one, so it
+#: is excluded rather than silently scanning a single address.
 _MODES = (
     "normal",
     "stealth",
-    "discover",
     "port",
     "web",
     "webporthttp",
@@ -53,7 +54,11 @@ _MODES = (
     "fullportonly",
     "vulnscan",
 )
-_PORT_REQUIRED_MODES = frozenset({"webporthttp", "webporthttps"})
+#: ``-m port`` without ``-p`` prints "Error: You need to enter a port number."
+#: and exits 0 (modes/fullportonly.sh) — a silent no-op success. The webport
+#: modes fail the same way without a port. Require it up front.
+_PORT_REQUIRED_MODES = frozenset({"port", "webporthttp", "webporthttps"})
+_PORT_ERROR_HINT = "You need to enter a port number"
 _WORKSPACE_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 _LOOT_SUFFIXES = (".txt", ".csv", ".json")
 _MAX_FILE_BYTES = 512_000
@@ -124,14 +129,21 @@ class Sn1perTool(BaseTool):
 
     def _execute(self, args: ToolInput, argv: list[str], policy: ToolPolicy):
         result = super()._execute(args, argv, policy)
-        if result.status is ToolStatus.OK:
-            return result
         if _ROOT_HINT in result.stdout or _ROOT_HINT in result.stderr:
             return dataclasses.replace(
                 result,
+                status=ToolStatus.BLOCKED,
                 error=(
                     "sniper refused to run: it must be started as root "
                     "(re-run the engagement with sudo / as root)"
+                ),
+            )
+        if _PORT_ERROR_HINT in result.stdout or _PORT_ERROR_HINT in result.stderr:
+            return dataclasses.replace(
+                result,
+                status=ToolStatus.ERROR,
+                error=(
+                    "sniper scanned nothing: this mode needs '-p <port>' " "(re-run with a port)"
                 ),
             )
         return result

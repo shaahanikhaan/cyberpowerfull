@@ -11,7 +11,7 @@ from urllib.error import URLError
 
 import pytest
 
-from cyberpowerfull.cli import main
+from cyberpowerfull.cli import build_parser, main
 from cyberpowerfull.models import BudgetState, Finding, Phase, Severity
 from cyberpowerfull.trace import StepRecord, TraceRecorder, save_trace
 
@@ -31,7 +31,7 @@ class TestHelpAndListing:
     def test_version(self, capsys) -> None:
         with pytest.raises(SystemExit):
             main(["--version"])
-        assert "cyberpowerfull 5.0.1" in capsys.readouterr().out
+        assert "cyberpowerfull 5.1.0" in capsys.readouterr().out
 
     def test_list_tools(self, capsys) -> None:
         assert main(["--list-tools"]) == 0
@@ -578,3 +578,82 @@ class TestToolchainAndPlaybooks:
         )
         assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 5
         assert "down" in capsys.readouterr().out
+
+
+class TestShortFlagsAndUpdate:
+    def test_target_and_mode_short_flags(self) -> None:
+        args = build_parser().parse_args(["-t", "127.0.0.1", "-m", "web"])
+        assert args.target == "127.0.0.1"
+        assert args.playbook == "web"
+
+    def test_mode_and_playbook_are_one_flag(self) -> None:
+        assert build_parser().parse_args(["--mode", "recon"]).playbook == "recon"
+        assert build_parser().parse_args(["--playbook", "api"]).playbook == "api"
+
+    def test_ai_and_mode_conflict(self, capsys) -> None:
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--target", "127.0.0.1", "--ai", "-m", "web"])
+        assert excinfo.value.code == 2
+        assert "choose one" in capsys.readouterr().err
+
+    def test_update_routes_to_self_update(self, monkeypatch) -> None:
+        calls: list[bool] = []
+        monkeypatch.setattr(
+            "cyberpowerfull.cli.run_update", lambda *, force=False: calls.append(force) or 0
+        )
+        assert main(["--update"]) == 0
+        assert main(["--update", "--force"]) == 0
+        assert calls == [False, True]
+
+    def test_one_pass_mode_override_plan(self, tmp_path: Path, capsys) -> None:
+        scope_dir = tmp_path / "scopes"
+        code = main(
+            [
+                "example.com",
+                "-m",
+                "web",
+                "--plan",
+                "--i-am-authorized",
+                "--scope-dir",
+                str(scope_dir),
+                "--out",
+                str(tmp_path / "artifacts"),
+                "--trace",
+                str(tmp_path / "trace.json"),
+                "--memory",
+                str(tmp_path / "memory.sqlite3"),
+            ]
+        )
+        assert code == 0
+        assert "playbook 'web'" in capsys.readouterr().out
+        assert (scope_dir / "example.com.json").is_file()
+
+    def test_one_pass_unknown_mode_fails_before_scope(self, tmp_path: Path, capsys) -> None:
+        scope_dir = tmp_path / "scopes"
+        code = main(["example.com", "-m", "bogus", "--plan", "--scope-dir", str(scope_dir)])
+        assert code == 8
+        assert "unknown playbook" in capsys.readouterr().err
+        assert not (scope_dir / "example.com.json").exists()
+
+    def test_playbook_short_flags_dry_run(self, workdir: Path, capsys) -> None:
+        code = main(
+            [
+                "--scope",
+                str(workdir / "scope.json"),
+                "-t",
+                "127.0.0.1",
+                "-m",
+                "network",
+                "--dry-run",
+                "--out",
+                str(workdir / "artifacts"),
+                "--trace",
+                str(workdir / "trace.json"),
+                "--memory",
+                str(workdir / "memory.sqlite3"),
+                "--quiet",
+            ]
+        )
+        assert code == 0
+        trace = json.loads((workdir / "trace.json").read_text(encoding="utf-8"))
+        assert trace["backend"] == "playbook:network"

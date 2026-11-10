@@ -46,6 +46,8 @@ class NucleiArgs(UrlInput):
     templates: list[str] = Field(default_factory=list, max_length=20)
     rate_limit: int = Field(default=20, ge=1, le=150)
     concurrency: int = Field(default=10, ge=1, le=50)
+    bulk_size: int = Field(default=25, ge=1, le=100)
+    max_host_error: int = Field(default=30, ge=1, le=200)
     timeout: int = Field(default=10, ge=1, le=120)
     retries: int = Field(default=1, ge=0, le=5)
 
@@ -82,6 +84,9 @@ class NucleiTool(BaseTool):
     skill = "information_disclosure"
     binary = "nuclei"
     success_codes = (0,)
+    # A full template-store run (no tags) sends thousands of requests; the
+    # default 300s tool budget would kill it mid-scan on any real target.
+    timeout_s = 1800
     description = (
         "Template-based vulnerability validation against a single URL. Returns matched "
         "templates with severity, CVE/CWE metadata and matcher evidence."
@@ -103,6 +108,10 @@ class NucleiTool(BaseTool):
             str(args.rate_limit),
             "-c",
             str(args.concurrency),
+            "-bs",
+            str(args.bulk_size),
+            "-mhe",
+            str(args.max_host_error),
             "-timeout",
             str(args.timeout),
             "-retries",

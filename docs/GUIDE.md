@@ -38,6 +38,7 @@ cpf example.com                           # already installed? this is the same 
 cpf https://app.example.com/login         # URLs are reduced to the host automatically
 cpf example.com --profile quick           # ~5-10 minutes: surface map only
 cpf example.com --profile deep            # two-hour budget, wider parallelism
+cpf example.com -m web                    # one area only: recon, web, network, stealth, api, full
 cpf example.com --plan                    # print the plan, send nothing at all
 ```
 
@@ -64,7 +65,8 @@ cpf example.com --plan                    # print the plan, send nothing at all
 | `deep` | `full` | 2 h | 4 | you have time and want the widest pass |
 
 Change the time budget without changing the profile with `--max-seconds N`; override the plan
-entirely with `--playbook NAME` (see [§5](#5-playbooks-in-practice)).
+entirely with `-m`/`--mode NAME` (`--playbook` is the same flag; the profile keeps its budgets)
+(see [§5](#5-playbooks-in-practice)). An unknown mode fails with exit `8` before any attestation.
 
 **The authorization question, honestly**
 
@@ -84,7 +86,8 @@ cpf example.com --scope my-engagement.json                            # use a sc
 - `--polite` withholds the `aggressive` capability (no high-rate scans).
 - `--with-credentials` adds `credential_testing`; it is off unless you ask for it.
 - `--ai` swaps the deterministic playbook for the autonomous agent loop (built-in auto agent;
-  add `--llm llamacpp:model` to use a local model instead).
+  add `--llm llamacpp:model` to use a local model instead). It cannot be combined with
+  `-m`/`--playbook`: pick model-chosen steps or a fixed plan.
 
 **What you get**
 
@@ -128,6 +131,16 @@ make tools        # or ./scripts/install.sh --with-tools
 ```
 
 `cyberpowerfull` and `cpf` are the same program.
+
+Keeping an editable install current (pulls the checkout, reinstalls, runs nothing):
+
+```bash
+cyberpowerfull --update
+```
+
+It refuses when the tree has uncommitted changes (commit, stash, or `--force`), explains a
+missing upstream branch, and never elevates itself: a system-wide install prints the exact
+`sudo` command that finishes the reinstall.
 
 ## 2. First run: the lab
 
@@ -220,6 +233,8 @@ cyberpowerfull --scope scope.json --target app.example.test --playbook recon
 cyberpowerfull --scope scope.json --target app.example.test --playbook web --parallel 4
 cyberpowerfull --scope scope.json --target 10.0.0.5 --playbook network --max-steps 20
 cyberpowerfull --scope scope.json --target app.example.test --playbook full --dry-run
+cpf -t app.example.test -m web --scope scope.json                                     # same run, short flags
+cpf app.example.test -m web                                                           # ...or derive the scope automatically
 ```
 
 How a run adapts (deterministic, evidence-based):

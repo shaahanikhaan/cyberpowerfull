@@ -350,9 +350,13 @@ def _nikto_web_port(args: Facts) -> dict[str, Any] | None:
 
 
 def _nuclei(args: Facts) -> dict[str, Any]:
+    # Focused high-signal tags: the full template store (no tags) takes far
+    # longer than a deterministic playbook step may spend. Full-store runs
+    # belong to dedicated nuclei invocations (timeout_s=1800 there).
     return {
         "target": args.primary_url,
         "severity": ["low", "medium", "high", "critical"],
+        "tags": ["cve", "exposure", "misconfig", "xss", "sqli", "rce", "lfi", "ssrf"],
         "rate_limit": 20,
         "concurrency": 10,
     }
