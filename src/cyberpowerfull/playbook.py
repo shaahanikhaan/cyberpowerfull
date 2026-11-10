@@ -15,6 +15,7 @@ agent. A playbook cannot bypass a guardrail.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -58,8 +59,20 @@ class Facts:
     wordlists: dict[str, str | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.domain is None and not _is_ip(self.target):
-            self.domain = self.target
+        target = self.target.strip()
+        if "://" in target:
+            # A URL target ("cpf https://app:8443/x") must not poison host-only
+            # fields: tools get the host, web builders keep the full URL.
+            scheme, _, _rest = target.partition("://")
+            if scheme.lower() in {"http", "https"}:
+                self.add_url(target)
+            self.target = urlparse(target).hostname or target
+            target = self.target
+        elif "/" in target:
+            self.target = target.split("/", 1)[0]
+            target = self.target
+        if self.domain is None and not _is_ip(target):
+            self.domain = target
 
     # -- derived views -----------------------------------------------------
     @property
@@ -596,6 +609,21 @@ def _worker_for(tool: str) -> str | None:
     return None
 
 
+_SEVERITY_ORDER = ("info", "low", "medium", "high", "critical")
+
+
+def _top_severity(findings: list[Finding] | None) -> str | None:
+    """Highest severity in a step's findings (for traces and live display)."""
+    best: str | None = None
+    for finding in findings or []:
+        level = getattr(finding.severity, "value", None)
+        if level not in _SEVERITY_ORDER:
+            continue
+        if best is None or _SEVERITY_ORDER.index(level) > _SEVERITY_ORDER.index(best):
+            best = level
+    return best
+
+
 class PlaybookRunner:
     """Executes a playbook with the same guardrails as the reasoning loop."""
 
@@ -639,6 +667,12 @@ class PlaybookRunner:
         self._seen: set[tuple[str, str | None]] = {
             (finding.title, finding.endpoint) for finding in memory.findings()
         }
+        # Per-run caches: tool metadata never changes mid-run, step arguments
+        # are frozen within a group, and an identical invocation is never
+        # worth running twice (the 'full' playbook schedules several).
+        self._describes: dict[str, dict[str, Any]] = {}
+        self._args_cache: dict[str, dict[str, Any] | None] = {}
+        self._invocations: dict[str, str] = {}
         self._workers = {
             name: WorkerAgent(name, scope=scope, policy=self.policy, tools=self.tools)
             for name in WORKER_TOOL_ALLOWLIST
@@ -659,10 +693,33 @@ class PlaybookRunner:
             return f"requires capability {capability.value!r} (not granted by scope.json)"
         if tool.phase not in self.scope.allowed_phases:
             return f"phase {tool.phase.value!r} is not permitted by scope.json"
-        describe = tool.describe()
+        describe = self._describe(step.tool)
         if not describe["installed"]:
             return f"binary not installed: {describe['binary']}"
         return None
+
+    def _describe(self, tool_name: str) -> dict[str, Any]:
+        """Tool metadata, resolved once per run (binaries do not change mid-run)."""
+        cached = self._describes.get(tool_name)
+        if cached is None:
+            cached = self.tools[tool_name].describe()
+            self._describes[tool_name] = cached
+        return cached
+
+    def _step_args(self, step: PlaybookStep) -> dict[str, Any] | None:
+        """Step arguments, derived once per group (facts freeze during a group)."""
+        if step.id not in self._args_cache:
+            self._args_cache[step.id] = step.args(self.facts)
+        return self._args_cache[step.id]
+
+    def _duplicate_of(self, step: PlaybookStep, args: dict[str, Any]) -> str | None:
+        """Id of the first step with an identical invocation, if one ran already."""
+        key = f"{step.tool}:{json.dumps(args, sort_keys=True, default=str)}"
+        origin = self._invocations.get(key)
+        if origin is None:
+            self._invocations[key] = step.id
+            return None
+        return origin
 
     # -- execution ---------------------------------------------------------
     def run(
@@ -670,6 +727,7 @@ class PlaybookRunner:
         playbook: Playbook,
         *,
         progress: Callable[[StepRecord], None] | None = None,
+        step_start: Callable[[dict[str, Any]], None] | None = None,
     ) -> PlaybookResult:
         started = time.monotonic()
         recorder = TraceRecorder(
@@ -687,6 +745,7 @@ class PlaybookRunner:
         budget = BudgetState(max_iterations=self.max_steps, max_seconds=self.max_seconds)
 
         for group in playbook.groups:
+            self._args_cache.clear()
             candidates: list[PlaybookStep] = []
             for step in playbook.steps_in(group):
                 reason = self._blocked_reason(step)
@@ -694,28 +753,41 @@ class PlaybookRunner:
                     skipped.append(f"{step.id}: {reason}")
                     continue
                 try:
-                    args = step.args(self.facts)
+                    args = self._step_args(step)
                 except Exception as exc:  # pragma: no cover - defensive
                     skipped.append(f"{step.id}: argument derivation failed: {exc}")
                     continue
                 if args is None:
                     skipped.append(f"{step.id}: precondition not met (no discovered fact)")
                     continue
-                candidates.append(step)
-
-            runnable: list[PlaybookStep] = []
-            for step in candidates:
-                cached = self.memory.negative_cache_hit(step.tool, step.args(self.facts) or {})
+                duplicate_of = self._duplicate_of(step, args)
+                if duplicate_of is not None:
+                    skipped.append(
+                        f"{step.id}: duplicate of {duplicate_of} "
+                        "(same tool and arguments already ran)"
+                    )
+                    continue
+                cached = self.memory.negative_cache_hit(step.tool, args)
                 if cached and not self.dry_run:
                     skipped.append(f"{step.id}: negative cache: {cached}")
                     continue
-                runnable.append(step)
-            candidates = runnable
+                candidates.append(step)
             if not candidates:
                 continue
             if budget.exhausted() or len(executed) + len(candidates) > self.max_steps:
                 stop_reason = "budget_exhausted:steps"
                 break
+            if step_start is not None:
+                for step in candidates:
+                    phase = step.phase or self.tools[step.tool].phase
+                    step_start(
+                        {
+                            "tool": step.tool,
+                            "purpose": step.purpose,
+                            "id": step.id,
+                            "phase": phase.value if isinstance(phase, Phase) else str(phase),
+                        }
+                    )
 
             parallel = self.parallel or playbook.default_parallel
             if parallel <= 1 or len(candidates) == 1:
@@ -779,7 +851,7 @@ class PlaybookRunner:
         """Execute one step. Never raises: a failure becomes a recorded step."""
         worker_name = _worker_for(step.tool) or "scan"
         worker = self._workers[worker_name]
-        args = step.args(self.facts) or {}
+        args = self._step_args(step) or {}
         step_started = utcnow()
         t0 = time.monotonic()
 
@@ -854,6 +926,8 @@ class PlaybookRunner:
                 "stdout_excerpt": getattr(result, "stdout", "")[:500],
                 "observations": observations[:10],
                 "error": error,
+                "finding_titles": [finding.title for finding in (findings or [])[:5]],
+                "top_severity": _top_severity(findings),
             },
             finding_ids=[finding.id for finding in findings or []],
             started_at=step_started.isoformat(),

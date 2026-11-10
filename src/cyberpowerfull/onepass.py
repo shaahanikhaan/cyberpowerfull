@@ -52,22 +52,22 @@ PROFILES: dict[str, Profile] = {
         name="quick",
         playbook="recon",
         max_seconds=600,
-        parallel=2,
-        summary="surface map only: ports, HTTP, WAF, a first template pass (~5-10 minutes)",
+        parallel=4,
+        summary="surface map only: ports, HTTP, WAF, a first template pass (~5 minutes)",
     ),
     "standard": Profile(
         name="standard",
         playbook="full",
         max_seconds=1800,
-        parallel=3,
-        summary="recon + web + network in one ordered pass (~20-40 minutes on a live host)",
+        parallel=8,
+        summary="recon + web + network in one ordered pass (~15-30 minutes on a live host)",
     ),
     "deep": Profile(
         name="deep",
         playbook="full",
         max_seconds=7200,
-        parallel=4,
-        summary="the standard pass with a two-hour budget and wider parallelism",
+        parallel=12,
+        summary="the standard pass with a two-hour budget and the widest parallelism",
     ),
 }
 

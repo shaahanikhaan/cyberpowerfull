@@ -1,8 +1,8 @@
 """Runtime configuration objects.
 
-Configuration is intentionally explicit and small: paths, budgets, and the local
-model specification. Values come from CLI flags first, then environment
-variables, then the defaults below.
+Configuration is intentionally explicit and small: paths, budgets, and the
+decision-backend specification. Values come from CLI flags first, then
+environment variables, then the defaults below.
 """
 
 from __future__ import annotations
@@ -16,9 +16,9 @@ from cyberpowerfull import DEFAULT_ENDPOINT, DEFAULT_MODEL
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """Local inference settings. There is no cloud backend by design."""
+    """Local decision-backend settings. There is no cloud backend by design."""
 
-    backend: str = "ollama"
+    backend: str = "auto"
     model: str = DEFAULT_MODEL
     endpoint: str = DEFAULT_ENDPOINT
     temperature: float = 0.1
@@ -28,7 +28,7 @@ class ModelConfig:
 
     @classmethod
     def from_env(cls) -> ModelConfig:
-        backend = os.environ.get("CYBERPOWERFULL_LLM_BACKEND", "ollama")
+        backend = os.environ.get("CYBERPOWERFULL_LLM_BACKEND", "auto")
         is_llamacpp = backend.lower() in {"llamacpp", "llama.cpp", "llama_cpp", "llama-server"}
         default_endpoint = "http://127.0.0.1:8080" if is_llamacpp else DEFAULT_ENDPOINT
         return cls(
@@ -51,7 +51,7 @@ class RunConfig:
 
     scope_path: Path = Path("scope.json")
     target: str | None = None
-    llm_spec: str = f"ollama:{DEFAULT_MODEL}"
+    llm_spec: str = f"auto:{DEFAULT_MODEL}"
     max_iterations: int = 12
     max_tokens: int = 24_000
     max_seconds: int = 900
@@ -64,7 +64,7 @@ class RunConfig:
     @classmethod
     def from_env(cls) -> RunConfig:
         model = os.environ.get("CYBERPOWERFULL_MODEL", DEFAULT_MODEL)
-        backend = os.environ.get("CYBERPOWERFULL_LLM_BACKEND", "ollama")
+        backend = os.environ.get("CYBERPOWERFULL_LLM_BACKEND", "auto")
         return cls(
             scope_path=Path(os.environ.get("CYBERPOWERFULL_SCOPE", "scope.json")),
             llm_spec=os.environ.get("CYBERPOWERFULL_LLM", f"{backend}:{model}"),
