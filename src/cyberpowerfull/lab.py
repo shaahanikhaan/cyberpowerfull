@@ -172,6 +172,7 @@ def run_local_lab(
     parallel: int | None = None,
     max_steps: int | None = None,
     dry_run: bool = False,
+    run_id: str | None = None,
     progress: Callable[[StepRecord], None] | None = None,
 ) -> tuple[PlaybookResult, int]:
     """Serve a real page on loopback, run a playbook against it, then shut down.
@@ -189,6 +190,7 @@ def run_local_lab(
             parallel=parallel,
             # The runner requires a concrete step budget; the CLI default is 80.
             max_steps=max_steps or 80,
+            run_id=run_id,
         )
         result = runner.run(get_playbook(playbook), progress=progress)
         assert server.port == chosen

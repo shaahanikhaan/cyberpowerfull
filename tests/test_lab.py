@@ -87,6 +87,16 @@ class TestLabRun:
         assert result.trace.skipped
         assert all(":" in entry for entry in result.trace.skipped)
 
+    def test_run_id_is_carried_into_the_trace(self) -> None:
+        with MemoryStore(":memory:", run_id="lab-trace-id") as memory:
+            result, _port = run_local_lab(
+                scope=_socket_scope(),
+                memory=memory,
+                playbook="network",
+                run_id="lab-trace-id",
+            )
+        assert result.trace.run_id == "lab-trace-id"
+
     def test_service_is_stopped_even_when_the_playbook_fails(self, monkeypatch) -> None:
         import cyberpowerfull.lab as lab_module
 

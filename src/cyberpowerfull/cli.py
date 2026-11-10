@@ -838,6 +838,7 @@ def _run_lab(args: argparse.Namespace) -> int:
                 parallel=args.parallel or None,
                 max_steps=args.max_steps,
                 dry_run=cfg.dry_run,
+                run_id=run_id,
                 progress=None if args.quiet else _progress,
             )
         except RuntimeError as exc:

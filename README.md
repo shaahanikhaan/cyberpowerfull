@@ -29,7 +29,7 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
-| Tests | 605 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Tests | 606 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
 
 > **This repository is pentest-only.** The previous general-purpose "assistant" surface, the
@@ -567,7 +567,7 @@ API-key code path for inference and none will be added.
 pip install -e ".[dev]"
 ruff check .
 black --check .
-pytest                      # 605 tests, coverage gate (70%) in pyproject.toml addopts
+pytest                      # 606 tests, coverage gate (70%) in pyproject.toml addopts
 pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```
 

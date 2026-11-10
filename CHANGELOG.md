@@ -38,6 +38,8 @@ run take ten minutes instead of thirty seconds.
 
 - `run_local_lab()` no longer passes an empty step budget to the runner (it now defaults to the
   CLI value of 80), which made the lab fail with a validation error.
+- Lab runs carry their `run_id` into the trace, so the trace, report, findings JSON and memory
+  file all agree on one identifier.
 
 ## [3.0.0] — Depth, automation, and live host awareness
 
