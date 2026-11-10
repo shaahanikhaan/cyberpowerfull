@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -325,9 +326,10 @@ class TestMachineReadableOutput:
         assert result["ruleId"] == "CVE-2026-0001"
         assert result["level"] == "error"
         assert result["properties"]["verified"] is False
-        assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"].startswith(
-            "https://example.com"
-        )
+        # Parse the URI instead of substring-matching it: the SARIF location must point
+        # at the finding's host exactly.
+        location = urlsplit(result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"])
+        assert (location.scheme, location.hostname) == ("https", "example.com")
         assert run["tool"]["driver"]["rules"][0]["id"] == "CVE-2026-0001"
 
     def test_sarif_uses_cwe_when_there_is_no_cve(self) -> None:
