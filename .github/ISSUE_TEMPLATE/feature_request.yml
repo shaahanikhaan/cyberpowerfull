@@ -1,0 +1,60 @@
+name: Feature request
+description: Propose a tool, playbook, workflow, or repository change
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `docs/ROADMAP.md` first: if the idea is already there, comment on that item instead.
+        Proposals that add capability must state how they keep the scope and capability gates intact.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Engagement problem
+      description: What can you not do today, and what does that cost you?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Smallest change that solves it
+      description: Which tool/playbook/skill/flag, and what would it do?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance test
+      description: How would a reviewer prove it works without trusting a marketing claim?
+      placeholder: |
+        A test that runs the wrapper against a captured fixture and asserts the parsed findings,
+        plus a real run against 127.0.0.1 proving the port is evidenced.
+    validations:
+      required: true
+  - type: dropdown
+    id: invariant
+    attributes:
+      label: Does this touch a safety invariant?
+      options:
+        - "No"
+        - scope gate
+        - capability gate
+        - loopback-only inference
+        - append-only memory
+        - proof-only exploitation
+        - exit-code contract
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing tools, manual workflow, or why nothing else fits
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: This does not add a hosted service, cloud inference, or a payload/delivery capability
+          required: true

@@ -2,8 +2,8 @@
 
 **What is it?** A local-only autonomous penetration-testing agent — a model-backed reasoning
 loop **and** a deterministic multi-tool automation engine — that is not a chatbot, needs
-no cloud API key, needs no docker for its core loop, and runs real typed tools against an
-authorized target with evidence capture: recon, scanning, validation, and reporting.
+no cloud API key, needs no docker for its core loop, and runs real typed tools against an authorized
+target with evidence capture: recon, scanning, validation, and reporting.
 
 **What does it do?** Recon, scanning, validation, and reporting against an authorized target —
 subdomain and DNS enumeration, port and service discovery, HTTP probing, crawling, content
@@ -20,6 +20,7 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+[![CodeQL](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/codeql.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/codeql.yml)
 
 | Property | Value |
 |---|---|
@@ -29,8 +30,22 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
+| Tests | 682 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
 | Tests | 686 tests, 87% line coverage, `pytest --cov-fail-under=70` enforced in CI |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
+
+### Documentation
+
+| Start here | For |
+|---|---|
+| [docs/GUIDE.md](docs/GUIDE.md) | **user guide**: install → first run → scope → playbooks → results → troubleshooting |
+| [docs/HANDOFF.md](docs/HANDOFF.md) | **maintainer map**: invariants, module layout, test reality, gotchas, release checklist |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | what shipped and what comes next, with acceptance tests |
+| [docs/KALI.md](docs/KALI.md) | host layout, packages, wordlist/template resolution |
+| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Strix, PentAGI, Sn1per setup and data flow |
+| [AGENTS.md](AGENTS.md) | entry point for AI coding agents |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | dev setup, standards, how to add a tool |
+| [docs/README.md](docs/README.md) | full documentation index |
 
 > **This repository is pentest-only.** The previous general-purpose "assistant" surface, the
 > rule-based pseudo-brain, and the unverifiable marketing claims were removed in 2.0. 3.0 adds
@@ -185,7 +200,17 @@ src/cyberpowerfull/
 ├── payloads/               # proof-only payload catalogue + request builder
 ├── native_scan.py          # stdlib port scan, HTTP facts, nmap XML inventory
 ├── skills/packs/           # 29 Markdown/Jinja skill packages
+├── lab.py                  # real loopback service + playbook (the --lab path)
 └── memory/store.py         # append-only SQLite memory
+
+docs/                       # GUIDE, HANDOFF, ROADMAP, KALI, INTEGRATIONS, readiness audit
+AGENTS.md                   # entry point for AI coding agents
+CONTRIBUTING.md             # dev setup, standards, extension recipes
+SECURITY.md  CHANGELOG.md   # policy and history
+.github/                    # CI, release, CodeQL, issue forms, PR template, CODEOWNERS
+scripts/                    # install.sh (setup) and release_check.py (pre-tag checks)
+Makefile                    # setup / lab / doctor / tools / test / docs / release-check
+tests/                      # 682 tests across CLI, tools, playbooks, lab, docs, repo hygiene
 ```
 
 ---
@@ -613,12 +638,14 @@ API-key code path for inference and none will be added.
 pip install -e ".[dev]"
 ruff check .
 black --check .
-pytest                      # 606 tests, coverage gate (70%) in pyproject.toml addopts
+pytest                      # 682 tests, coverage gate (70%) in pyproject.toml addopts
 pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```
 
+Contributor workflow, standards, and extension recipes: [CONTRIBUTING.md](CONTRIBUTING.md).
 Continuous integration (`.github/workflows/ci.yml`) runs ruff, black, the test suite with
-coverage on Python 3.10–3.12, and two end-to-end smoke jobs:
+coverage on Python 3.10–3.12, plus CodeQL and a tag-triggered release workflow, and two
+end-to-end smoke jobs:
 
 - a replay decision stream drives the agent against a local mock TCP service; the job asserts
   that the emitted trace contains steps, tool calls, and findings;
@@ -644,8 +671,18 @@ Example artifacts are committed under `examples/`: `decisions.json` (replay stre
   support, not necessarily exploitable.
 - There is no web UI, no multi-tenant server, no scheduling, and no chat interface — by design.
 
+## Contributing
+
+Issues and pull requests are welcome, with one condition: nothing may weaken the scope gate,
+the capability gate, loopback-only inference, append-only memory, proof-only exploitation, or the
+exit-code contract. Read [CONTRIBUTING.md](CONTRIBUTING.md) and
+[docs/HANDOFF.md §4](docs/HANDOFF.md#4-invariants-do-not-break-these)
+first; bug and feature forms are in `.github/ISSUE_TEMPLATE/`. Security defects go through
+[SECURITY.md](SECURITY.md), never a public issue.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Security policy and reporting: [SECURITY.md](SECURITY.md).
 Change history: [CHANGELOG.md](CHANGELOG.md). Kali layout and install notes:
 [docs/KALI.md](docs/KALI.md). External agent setup: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+Full documentation index: [docs/README.md](docs/README.md).

@@ -1,0 +1,11 @@
+# Default owner for everything in the repo. Reviews are required on:
+#   - the guardrails (scope, capabilities, worker), which must not be weakened
+#   - the release and security workflows
+*                       @shaahanikhaan
+
+/src/cyberpowerfull/scope.py        @shaahanikhaan
+/src/cyberpowerfull/brain/          @shaahanikhaan
+/src/cyberpowerfull/tools/base.py   @shaahanikhaan
+/src/cyberpowerfull/memory/         @shaahanikhaan
+/.github/workflows/                 @shaahanikhaan
+/SECURITY.md                        @shaahanikhaan

@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in the agent does not behave as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security defects here — use the private channel described in SECURITY.md.
+        Never paste client data, credentials, or full engagement scopes; redact hosts.
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `cyberpowerfull --version` and the commit if you run from a checkout
+    validations:
+      required: true
+  - type: dropdown
+    id: path
+    attributes:
+      label: Which path were you running?
+      options:
+        - playbook (no model)
+        - reasoning loop (local model)
+        - --lab
+        - --init-scope / scope handling
+        - --toolchain / --doctor / knowledge commands
+        - external agent adapter (Strix / PentAGI / Sn1per)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the exit code and the relevant lines from the trace (`stop_reason`, `skipped`).
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Redacted commands are fine. `make lab` reproduces most runtime issues.
+      placeholder: |
+        1. cyberpowerfull --init-scope scope.json ...
+        2. cyberpowerfull --scope scope.json --target REDACTED --playbook network
+        3. exit code 6, step net-services status=error
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, and the output of `cyberpowerfull --toolchain` (redact hostnames)
+      placeholder: |
+        Kali 2026.x / Debian 12
+        Python 3.11.9
+        binaries: 24 installed, 44 missing
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: This is not a security vulnerability in the software itself
+          required: true
+        - label: I removed client-identifying information from this report
+          required: true

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability in this software
+    url: https://github.com/shaahanikhaan/cyberpowerfull/security/advisories/new
+    about: Report privately through GitHub Security Advisories. See SECURITY.md.
+  - name: Usage questions
+    url: https://github.com/shaahanikhaan/cyberpowerfull/blob/main/docs/GUIDE.md
+    about: Install, scopes, playbooks, troubleshooting, and recipes are covered in the user guide.
+  - name: Contributing and development
+    url: https://github.com/shaahanikhaan/cyberpowerfull/blob/main/CONTRIBUTING.md
+    about: Dev setup, standards, and how to add a tool, playbook, or skill pack.

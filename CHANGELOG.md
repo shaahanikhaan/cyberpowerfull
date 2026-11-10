@@ -4,6 +4,54 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] — Repository maturity
+
+The code did not change much in this release; the repository around it did. A tool people cannot
+audit, extend, or release cleanly is not a professional tool.
+
+### Added
+
+- **`docs/HANDOFF.md`** — the internal map: shipped history, module-by-module responsibilities,
+  the nine invariants, what the tests actually prove (and what they do not), extension recipes,
+  the gotchas that already cost time, known gaps, and the release checklist.
+- **`docs/GUIDE.md`** — task-oriented user guide: install (three routes), first run, authorizing a
+  real engagement, choosing a path, playbooks, the reasoning loop, capabilities, reading results,
+  external agents, a troubleshooting table keyed on exit codes, and recipes.
+- **`docs/ROADMAP.md`** — shipped versions plus the next three with acceptance tests, a research
+  backlog, and an explicit out-of-scope list.
+- **`docs/README.md`** — documentation index that links every document.
+- **`AGENTS.md`** — entry point for AI coding agents: how to use the tool safely, how to change
+  it, which invariants to preserve, and the testing facts that trip agents up.
+- **`CONTRIBUTING.md`** — dev setup, standards table, extension recipes, test notes, commit style,
+  release process.
+- **Community files** — pull request template with a safety checklist, YAML issue forms (bug +
+  feature) with a security-link redirect, and Dependabot for pip and actions.
+- **`.github/workflows/release.yml`** — tag-triggered release: verifies the tag matches the package
+  version, re-runs lint/tests with coverage, builds sdist + wheel, writes `SHA256SUMS`, and
+  publishes a GitHub release with notes extracted from this changelog.
+- **`.github/workflows/codeql.yml`** — CodeQL `security-and-quality` analysis on push, PR, and a
+  weekly schedule.
+- **`tests/test_repository.py`** — 76 tests that keep all of the above honest: required files,
+  issue-form schema, workflow triggers and permissions, release job ordering, CodeQL wiring,
+  broken relative links in every document, coverage of each user-facing command in the guide, the
+  handoff module map versus the real source tree, heading anchors, and the roadmap sections.
+- **`.editorconfig`** and **`.github/CODEOWNERS`** (guardrails and workflows owned explicitly).
+- **`scripts/release_check.py`** plus `make docs` / `make release-check`, so version, changelog,
+  README badge, and tag cannot drift apart.
+
+### Changed
+
+- README gains a documentation table, a CodeQL badge, a contributing section, and the new files in
+  the repository layout.
+- `Makefile` gains `make docs` (renders the doc index and verifies links) and `make release-check`
+  (lint + tests + version/tag consistency).
+- Version 3.2.0.
+
+### Notes
+
+- No behaviour change to the agent, the guardrails, or the artefacts. Everything in
+  `docs/HANDOFF.md §4` still holds, and the tests that enforce it are unchanged.
+
 ## [3.2.0] — Offline CVE intelligence and proof-only payloads
 
 Everything in this release runs locally: no cloud key, no scanner binary, no network call made
