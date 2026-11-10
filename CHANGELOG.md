@@ -4,6 +4,43 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] — Frictionless first run
+
+Nothing about the safety model changed; this release removes the setup friction that made a first
+run take ten minutes instead of thirty seconds.
+
+### Added
+
+- **`--lab`**: starts a real `http.server` listener on loopback, runs a real playbook against it,
+  writes the usual trace/report, and stops the service. No model, no scanner binaries, no fixture
+  data. Port selection is verified free first, and a busy port fails loudly instead of scanning
+  nothing.
+- **`--init-scope`**: writes a validated `scope.json` from flags
+  (`--engagement`, `--targets`, `--capabilities`, `--expires`, `--contact`, `--max-rps`,
+  `--allow-passive-sources`). It refuses to write `authorized: true` without
+  `--authorization-ref`, refuses to overwrite an existing file without `--force`, and prints the
+  exact next command.
+- `make` targets: `setup`, `lab`, `doctor`, `toolchain`, `tools`, `test`, `lint`, `fmt`, `clean`.
+- `scripts/install.sh`: Python 3.10 check, venv creation, editable install, optional
+  `--with-tools` apt install of the scanner set, and a readiness summary at the end.
+- `cpf` console script as a short alias.
+- `cyberpowerfull.scope.bootstrap_scope` / `write_scope` (validated scope creation, no silent
+  overwrite).
+
+### Changed
+
+- `--lab` requires the target to be in scope, like every other path; a scope that does not cover
+  `127.0.0.1` exits `4`.
+- CI smoke job runs `--lab` and asserts the served port is evidenced in the trace.
+- Version 3.1.0; docs gain an "Easy start" section and a task-to-command table.
+
+### Fixed
+
+- `run_local_lab()` no longer passes an empty step budget to the runner (it now defaults to the
+  CLI value of 80), which made the lab fail with a validation error.
+- Lab runs carry their `run_id` into the trace, so the trace, report, findings JSON and memory
+  file all agree on one identifier.
+
 ## [3.0.0] — Depth, automation, and live host awareness
 
 This release makes the agent substantially more capable without weakening the authorization

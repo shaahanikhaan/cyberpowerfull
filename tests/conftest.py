@@ -39,6 +39,13 @@ def scope_file(tmp_path: Path, scope_payload: dict) -> Path:
 
 
 @pytest.fixture
+def workdir(tmp_path: Path, scope_payload: dict) -> Path:
+    """A temp directory holding a valid, authorized scope.json."""
+    (tmp_path / "scope.json").write_text(json.dumps(scope_payload), encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture
 def scope() -> Scope:
     return Scope.model_validate(SCOPE_PAYLOAD)
 

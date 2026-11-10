@@ -21,6 +21,14 @@ Nothing is cached to disk. `--toolchain` reflects the machine at the moment it r
 
 ## Install the core set
 
+The quickest route is the bundled target (Debian/Kali, prompts for sudo, review the list first):
+
+```bash
+make tools          # or: ./scripts/install.sh --with-tools
+```
+
+Or install by hand:
+
 ```bash
 sudo apt update
 sudo apt install -y \

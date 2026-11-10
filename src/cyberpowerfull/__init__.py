@@ -8,7 +8,7 @@ general-purpose chat interface.
 
 from __future__ import annotations
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 AGENT_NAME = "cyberpowerfull"
 

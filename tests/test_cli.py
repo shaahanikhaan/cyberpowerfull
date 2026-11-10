@@ -16,12 +16,6 @@ from cyberpowerfull.models import BudgetState, Finding, Phase, Severity
 from cyberpowerfull.trace import StepRecord, TraceRecorder, save_trace
 
 
-@pytest.fixture
-def workdir(tmp_path: Path, scope_payload: dict) -> Path:
-    (tmp_path / "scope.json").write_text(json.dumps(scope_payload), encoding="utf-8")
-    return tmp_path
-
-
 class TestHelpAndListing:
     def test_help_is_pentest_only(self, capsys) -> None:
         with pytest.raises(SystemExit) as excinfo:
@@ -37,7 +31,7 @@ class TestHelpAndListing:
     def test_version(self, capsys) -> None:
         with pytest.raises(SystemExit):
             main(["--version"])
-        assert "cyberpowerfull 3.0.0" in capsys.readouterr().out
+        assert "cyberpowerfull 3.1.0" in capsys.readouterr().out
 
     def test_list_tools(self, capsys) -> None:
         assert main(["--list-tools"]) == 0
