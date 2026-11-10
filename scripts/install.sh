@@ -72,10 +72,24 @@ if [[ "$WITH_TOOLS" -eq 1 ]]; then
     APT=(sudo apt-get); NUCLEI_SUDO=(sudo)
   fi
   "${APT[@]}" update
-  "${APT[@]}" install -y nmap masscan naabu subfinder amass dnsrecon httpx-toolkit \
-    katana ffuf gobuster feroxbuster whatweb wafw00f nikto nuclei sqlmap dalfox \
-    arjun wpscan testssl.sh hydra exploitdb wordlists seclists \
-    || warn "some packages were unavailable; the agent will report them as missing"
+  # One package per apt call: a single unknown name (stock Debian lacks some
+  # Kali-only packages) must not abort the whole set.
+  missing_pkgs=()
+  for pkg in nmap masscan naabu subfinder amass dnsrecon httpx-toolkit \
+      katana ffuf gobuster feroxbuster whatweb wafw00f nikto nuclei sqlmap dalfox \
+      arjun wpscan testssl.sh hydra exploitdb metasploit-framework wordlists seclists; do
+    if "${APT[@]}" install -y "$pkg" >/dev/null 2>&1; then
+      say "scanner package ok: $pkg"
+    else
+      missing_pkgs+=("$pkg")
+      warn "scanner package unavailable: $pkg (the agent will report it as missing)"
+    fi
+  done
+  if [[ "${#missing_pkgs[@]}" -gt 0 ]]; then
+    warn "unavailable packages: ${missing_pkgs[*]}"
+  else
+    say "scanner set complete: all packages installed"
+  fi
   if command -v nuclei >/dev/null 2>&1; then
     "${NUCLEI_SUDO[@]}" nuclei -update-templates || warn "nuclei template update failed"
   fi

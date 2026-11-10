@@ -4,9 +4,9 @@ Read this before changing anything. It records what exists, what must not break,
 live, what the tests actually prove, and what is deliberately unfinished. `README.md` is the
 public description; this file is the internal map.
 
-- **Version:** 5.0.0
-- **Last known good:** `main` after the 5.0.0 merge, CI green on Python 3.10–3.12
-- **Test suite:** 876 passed, 3 skipped, 84% line coverage (gate: 70%)
+- **Version:** 5.0.1
+- **Last known good:** `main` after the 5.0.1 merge, CI green on Python 3.10–3.12
+- **Test suite:** 879 passed, 3 skipped, 84% line coverage (gate: 70%)
 - **Audience note:** this repository is a pentest-only agent. It refuses to run without an
   authorized `scope.json`. One-command mode can *write* that file, but only after a typed
   attestation that is recorded in it. Do not "fix" that away.
@@ -35,6 +35,7 @@ what the machine can actually run; nothing is bundled or simulated.
 | 3.3.0 | Repository maturity: handoff/guide/roadmap docs, issue + PR templates, release and CodeQL workflows, doc-hygiene tests | `docs/`, `AGENTS.md`, `CONTRIBUTING.md`, `.github/`, `tests/test_repository.py` |
 | 4.0.0 | One command: `cpf TARGET` / `./run.sh TARGET` derives the scope, attests authorization, picks a profile, runs, and explains the result; SARIF + run manifest artefacts | `onepass.py`, `run.sh`, `tests/test_onepass.py`, `reporting.py` |
 | 5.0.0 | Built-in auto agent (default backend, Ollama removed), live foreground display, faster parallel runs, testssl.sh wrapper rewritten against v3.2.5 | `brain/agent.py`, `live.py`, `brain/llm.py`, `tools/testssl.py`, `tests/test_agent.py`, `tests/test_live.py`, `tests/test_testssl_wrapper.py` |
+| 5.0.1 | Missing-tool experience: per-package installer (+`metasploit-framework`), condensed `--check`, pre-run coverage note, plain-install `pytest`, `engagements/` ignored | `scripts/install.sh`, `Makefile`, `cli.py`, `pyproject.toml`, `.gitignore`, `tests/test_cli.py`, `tests/test_lab.py` |
 
 ## 3. Module map (what lives where, and why)
 
@@ -160,7 +161,7 @@ It is deliberately not a new execution engine. If you change guardrails, they st
   callback wiring is unit-tested, because it needs a TTY.
 - **SARIF/manifest:** shape, rule ids (CVE → CWE → title slug), severity→level mapping, and
   `properties.verified` are asserted; nothing here has been validated against GitHub's uploader.
-- **Coverage gate:** 70% is configured in `pyproject.toml` `addopts`; the suite sits at ~87%.
+- **Coverage gate:** 70% is enforced by `make test` and CI (plain `pytest` runs without the coverage plugin); the suite sits at ~84%.
 
 ## 6. Recipes: how to extend the project
 

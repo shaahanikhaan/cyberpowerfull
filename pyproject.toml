@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cyberpowerfull"
-version = "5.0.0"
+version = "5.0.1"
 description = "Local-only autonomous penetration-testing agent: model-backed reasoning, typed tool layer, offline CVE intel, deterministic memory."
 readme = "README.md"
 license = "MIT"
@@ -58,7 +58,7 @@ cyberpowerfull = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-addopts = "-q --strict-markers --cov=cyberpowerfull --cov-report=term-missing --cov-fail-under=70"
+addopts = "-q --strict-markers"
 filterwarnings = ["error::DeprecationWarning"]
 
 [tool.coverage.run]

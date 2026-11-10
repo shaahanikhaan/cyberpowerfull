@@ -46,22 +46,24 @@ toolchain: ## live inventory of binaries, wordlists, templates on this host
 tools: ## install the scanner set on Debian/Kali (needs sudo; review first)
 	@echo "installing: nmap masscan naabu subfinder amass dnsrecon httpx-toolkit katana \\"
 	@echo "  ffuf gobuster feroxbuster whatweb wafw00f nikto nuclei sqlmap dalfox arjun \\"
-	@echo "  wpscan testssl.sh hydra exploitdb wordlists seclists"
+	@echo "  wpscan testssl.sh hydra exploitdb metasploit-framework wordlists seclists"
 	sudo apt-get update
-	sudo apt-get install -y nmap masscan naabu subfinder amass dnsrecon httpx-toolkit \
+	for p in nmap masscan naabu subfinder amass dnsrecon httpx-toolkit \
 		katana ffuf gobuster feroxbuster whatweb wafw00f nikto nuclei sqlmap dalfox \
-		arjun wpscan testssl.sh hydra exploitdb wordlists seclists
+		arjun wpscan testssl.sh hydra exploitdb metasploit-framework wordlists seclists; do \
+		sudo apt-get install -y "$$p" || echo "unavailable: $$p (will report as missing)"; \
+	done
 	@echo "then: sudo nuclei -update-templates"
 
 docs: ## verify the documentation set (index, links, required files)
-	$(BIN)/python -m pytest tests/test_repository.py -q --no-cov
+	$(BIN)/python -m pytest tests/test_repository.py -q
 	@echo "docs: index at docs/README.md"
 
 release-check: lint test ## verify version, changelog, badge, and tag consistency before tagging
 	$(BIN)/python scripts/release_check.py
 
 test: ## run the test suite with the coverage gate
-	$(BIN)/python -m pytest
+	$(BIN)/python -m pytest --cov=cyberpowerfull --cov-report=term-missing --cov-fail-under=70
 
 lint: ## ruff + black, non-mutating
 	$(BIN)/ruff check .

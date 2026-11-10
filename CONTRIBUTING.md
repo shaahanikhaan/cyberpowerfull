@@ -34,7 +34,7 @@ managed — always work inside `.venv/`.
 | Subprocess | argv lists only, `shell=False`, sanitized env, bounded output — never `shell=True` |
 | Files | artefacts go through `storage.write_private_text` (owner-only) |
 | Logging | nothing on stdout except the documented CLI output; progress goes to stderr |
-| Tests | `pytest`; coverage gate 70% in `pyproject.toml`, currently ~88% (682 tests) |
+| Tests | `pytest` (plain run works with just `pytest` installed); coverage gate 70% enforced by `make test` and CI, currently ~84% (879 tests) |
 
 ## Adding things
 
@@ -56,9 +56,9 @@ The short version:
 ## Tests
 
 ```bash
-make test                          # everything, with the coverage gate
-.venv/bin/python -m pytest tests/test_playbook.py -q --no-cov
-.venv/bin/python -m pytest -k "lab and not slow" -q --no-cov
+make test                          # everything, with the coverage gate (needs .[dev] for pytest-cov)
+.venv/bin/python -m pytest tests/test_playbook.py -q
+.venv/bin/python -m pytest -k "lab and not slow" -q
 ```
 
 Notes that save time:

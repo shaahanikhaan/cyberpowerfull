@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.1] — Missing-tool experience
+
+Real-target runs on a bare host drowned the operator in missing-binary noise, and the
+installer itself could fail entirely when a single package name was unknown. This patch
+makes the gap obvious up front, condenses the noise, and hardens the installer.
+
+### Fixed
+
+- **Installer installs per package** (`scripts/install.sh`, `make tools`): one unknown
+  package name (stock Debian lacks some Kali-only packages) no longer aborts the whole
+  set — each failure is reported and the rest still install, with a summary at the end.
+- **Installer now includes `metasploit-framework`**: the shipped Metasploit wrapper was
+  never installable via the documented path (`msfconsole` stayed missing forever).
+- **`--check` condenses missing tools** into one summary line plus the install command,
+  instead of one `MISSING binary` line per tool.
+- **One-command runs warn up front**: `cpf TARGET` prints scanner coverage
+  (`note: 5/30 scanners ready; …`) to stderr before a long run instead of surprising
+  the operator with skips at the end.
+- **Test runner works on a plain install**: coverage flags moved out of
+  `pyproject.toml` `addopts` (bare `pytest` failed with `unrecognized arguments`
+  without the `dev` extra); the 70% gate is enforced by `make test` and CI.
+- **`engagements/` is now git-ignored**: one-command scopes carry authorization
+  claims and must never be committed.
+
 ## [5.0.0] — Built-in auto agent
 
 No model download, no model server, no setup beyond the install: the default backend is now
