@@ -1,7 +1,7 @@
 """nuclei wrapper: template-driven vulnerability validation (JSONL output).
 
-Interactsh (out-of-band cloud callback) is always disabled so the agent cannot
-leak target data to a third party.
+The wrapper requests Interactsh to be disabled, but templates and the scanner
+are not sandboxed and can still contact other destinations.
 """
 
 from __future__ import annotations
@@ -75,6 +75,8 @@ class NucleiTool(BaseTool):
             "-silent",
             "-nc",
             "-no-interactsh",
+            "-disable-update-check",
+            "-disable-redirects",
             "-rl",
             str(args.rate_limit),
             "-c",
@@ -92,15 +94,30 @@ class NucleiTool(BaseTool):
         findings: list[Finding] = []
         for record in json_lines(output):
             info = record.get("info") or {}
+            if not isinstance(info, dict):
+                continue
             severity = Severity.coerce(str(info.get("severity", "info")))
             template_id = str(record.get("template-id") or "unknown-template")
             name = str(info.get("name") or template_id)
             classification = info.get("classification") or {}
-            cwe_ids = classification.get("cwe-id") or []
-            cve_ids = classification.get("cve-id") or []
-            cwe = f"CWE-{str(cwe_ids[0]).replace('cwe-', '')}" if cwe_ids else None
-            cve = str(cve_ids[0]).upper() if cve_ids else None
-            cvss = classification.get("cvss-score")
+            if not isinstance(classification, dict):
+                classification = {}
+            cwe_ids = json_id_list(classification.get("cwe-id"))
+            cve_ids = json_id_list(classification.get("cve-id"))
+            cwe = cwe_ids[0].upper() if cwe_ids else None
+            if cwe and cwe.isdigit():
+                cwe = f"CWE-{cwe}"
+            if cwe and not re.fullmatch(r"CWE-\d+", cwe):
+                cwe = None
+            cve = cve_ids[0].upper() if cve_ids else None
+            if cve and not re.fullmatch(r"CVE-\d{4}-\d{4,7}", cve):
+                cve = None
+            try:
+                cvss = float(classification.get("cvss-score"))
+                if not 0 <= cvss <= 10:
+                    cvss = None
+            except (TypeError, ValueError):
+                cvss = None
             matcher = record.get("matcher-name")
             matched_at = str(record.get("matched-at") or record.get("host") or args.target)
             extracted = json_id_list(record.get("extracted-results"))
@@ -118,8 +135,9 @@ class NucleiTool(BaseTool):
                     evidence=evidence,
                     cwe=cwe,
                     cve=cve,
-                    cvss=float(cvss) if isinstance(cvss, int | float) else None,
-                    verified=bool(matcher) and severity.rank >= Severity.HIGH.rank,
+                    cvss=cvss,
+                    # A template match is evidence, not independent verification.
+                    verified=False,
                 )
             )
         return findings

@@ -17,10 +17,15 @@ _TECHNIQUE_RE = re.compile(r"^[BEUSTQ]{1,6}$")
 _PARAM_RE = re.compile(r"^[A-Za-z0-9_\[\]\-.]{1,80}$")
 _DBMS_RE = re.compile(r"^[A-Za-z0-9_ \-]{1,40}$")
 
-_PARAMETER_LINE = re.compile(r"^Parameter:\s*(?P<param>.+?)\s*\((?P<where>[^)]+)\)", re.MULTILINE)
-_TYPE_LINE = re.compile(r"^Type:\s*(?P<type>.+)$", re.MULTILINE)
-_TITLE_LINE = re.compile(r"^Title:\s*(?P<title>.+)$", re.MULTILINE)
-_PAYLOAD_LINE = re.compile(r"^Payload:\s*(?P<payload>.+)$", re.MULTILINE)
+_PARAMETER_LINE = re.compile(
+    r"^\s*Parameter:\s*(?P<param>.+?)\s*\((?P<where>[^)]+)\)", re.MULTILINE
+)
+_TYPE_LINE = re.compile(r"^\s*Type:\s*(?P<type>.+)$", re.MULTILINE)
+_TITLE_LINE = re.compile(r"^\s*Title:\s*(?P<title>.+)$", re.MULTILINE)
+_PAYLOAD_LINE = re.compile(r"^\s*Payload:\s*(?P<payload>.+)$", re.MULTILINE)
+_LOG_ERROR = re.compile(r"\[(?:CRITICAL|ERROR)\][ \t]*([^\r\n]*)", re.IGNORECASE)
+_CLEAN_RESULT = "all tested parameters do not appear to be injectable"
+_CONFIRMED_RESULT = "sqlmap identified the following injection point"
 
 
 class SqlmapArgs(UrlInput):
@@ -69,12 +74,25 @@ class SqlmapTool(BaseTool):
     phase = Phase.VALIDATION
     skill = "sql_injection"
     binary = "sqlmap"
-    success_codes = (0, 1)
+    success_codes = (0,)
     description = (
         "Confirms SQL injection in a single HTTP parameter. Batch mode, no data "
         "extraction, no OS shell. Produces a verified finding when a parameter is injectable."
     )
     input_model = SqlmapArgs
+
+    def exit_succeeded(self, exit_code: int, stdout: str, stderr: str) -> bool:
+        # sqlmap can exit 0 after a connection or other fatal error. It also
+        # logs a completed negative result at CRITICAL, so distinguish that
+        # exact outcome from actual errors and unrecognized/incomplete output.
+        if exit_code != 0:
+            return False
+        output = f"{stdout}\n{stderr}".lower()
+        if not any(marker in output for marker in (_CLEAN_RESULT, _CONFIRMED_RESULT)):
+            return False
+        return all(
+            match.group(1).startswith(_CLEAN_RESULT) for match in _LOG_ERROR.finditer(output)
+        )
 
     def build_argv(self, args: SqlmapArgs, out_file: str | None = None) -> list[str]:
         argv = [
@@ -83,6 +101,8 @@ class SqlmapTool(BaseTool):
             args.target,
             "--batch",
             "--disable-coloring",
+            "--ignore-redirects",
+            "--ignore-proxy",
             "--flush-session",
             f"--level={args.level}",
             f"--risk={args.risk}",
@@ -99,12 +119,34 @@ class SqlmapTool(BaseTool):
 
     def parse(self, args: SqlmapArgs, output: str, out_file: str | None = None) -> list[Finding]:
         lower = output.lower()
-        confirmed = (
-            "sqlmap identified the following injection point" in lower
-            or "is vulnerable" in lower
-            or "parameter appears to be injectable" in lower
-        )
+        confirmed = _CONFIRMED_RESULT in lower
         if not confirmed:
+            # Preliminary heuristics can later be declared false positives. They
+            # are not confirmation; keep only unresolved candidates for review.
+            negative = any(
+                marker in lower
+                for marker in (
+                    "false positive or unexploitable",
+                    "does not seem to be injectable",
+                    "do not appear to be injectable",
+                )
+            )
+            if "appears to be" in lower and "injectable" in lower and not negative:
+                return [
+                    self.finding(
+                        title="Possible SQL injection (sqlmap preliminary heuristic)",
+                        severity=Severity.LOW,
+                        confidence=0.4,
+                        target=args.target,
+                        endpoint=args.target,
+                        evidence=truncate(output, 800),
+                        cwe="CWE-89",
+                        verified=False,
+                        remediation=(
+                            "Manually validate the candidate and use parameterised queries."
+                        ),
+                    )
+                ]
             return []
         findings: list[Finding] = []
         params = _PARAMETER_LINE.findall(output)
@@ -133,7 +175,6 @@ class SqlmapTool(BaseTool):
                     endpoint=args.target,
                     evidence=evidence,
                     cwe="CWE-89",
-                    cvss=8.6,
                     verified=True,
                     remediation="Use parameterised queries; validate and escape all input.",
                 )
@@ -149,7 +190,6 @@ class SqlmapTool(BaseTool):
                     endpoint=args.target,
                     evidence=evidence,
                     cwe="CWE-89",
-                    cvss=8.6,
                     verified=True,
                     remediation="Use parameterised queries; validate and escape all input.",
                 )
@@ -161,7 +201,7 @@ class SqlmapTool(BaseTool):
             return ["sqlmap: no injectable parameter found"]
         if not self.parse(args, output):
             return ["sqlmap: inconclusive output"]
-        return ["sqlmap: injection confirmed"]
+        return ["sqlmap: candidate(s) reported; review the evidence"]
 
 
 __all__ = ["SqlmapArgs", "SqlmapTool"]

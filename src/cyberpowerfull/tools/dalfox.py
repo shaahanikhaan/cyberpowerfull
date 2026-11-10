@@ -97,7 +97,6 @@ class DalfoxTool(BaseTool):
                     endpoint=str(item.get("url") or args.target),
                     evidence=truncate(f"inject_type={inject_type} payload={evidence_text}"),
                     cwe="CWE-79",
-                    cvss=6.1 if verified else None,
                     verified=verified,
                     remediation=(
                         "Context-aware output encoding and a restrictive Content-Security-Policy."

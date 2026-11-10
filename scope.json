@@ -15,11 +15,14 @@
     "scanning",
     "validation"
   ],
-  "max_rps": 5,
-  "expires": "2027-12-31",
-  "contact": "lab-owner@localhost",
-  "notes": "Default scope shipped with the repository: the loopback lab instance only. 'aggressive' is granted because the only targets are 127.0.0.1/localhost. Replace every value with your engagement scope before testing anything else.",
   "capabilities": [
     "aggressive"
-  ]
+  ],
+  "max_rps": 5,
+  "allow_passive_sources": false,
+  "allowed_wordlists": [],
+  "allowed_nuclei_templates": [],
+  "expires": null,
+  "contact": "lab-owner@localhost",
+  "notes": "Default scope shipped with the repository: the loopback lab instance only. 'aggressive' is granted because 127.0.0.1/localhost is a lab you own; external_agents and credential_testing are deliberately not granted. Replace every value with your engagement scope, authorization reference, and the capabilities the engagement actually authorises before testing anything else."
 }

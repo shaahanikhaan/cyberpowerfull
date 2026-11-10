@@ -1,7 +1,7 @@
 {
   "engagement": "example-engagement-name",
-  "authorized": true,
-  "authorization_ref": "SOW-2026-014 / signed 2026-11-01",
+  "authorized": false,
+  "authorization_ref": "replace-with-written-authorization-reference",
   "targets": [
     "app.example.test",
     "api.example.test",
@@ -21,13 +21,12 @@
     "scanning",
     "validation"
   ],
+  "capabilities": [],
   "max_rps": 5,
+  "allow_passive_sources": false,
+  "allowed_wordlists": [],
+  "allowed_nuclei_templates": [],
   "expires": "2027-01-31",
   "contact": "security@example.test",
-  "notes": "Copy this file to scope.json. Only list assets you are contractually authorized to test. capabilities are explicit opt-ins: aggressive (masscan/naabu/high-rate), credential_testing (hydra), external_agents (Strix/PentAGI/Sn1per). Remove any capability the engagement does not authorise.",
-  "capabilities": [
-    "aggressive",
-    "credential_testing",
-    "external_agents"
-  ]
+  "notes": "Copy this file to scope.json and set authorized to true only after you hold written authorization. capabilities are explicit opt-ins, each unlocking tools that are otherwise blocked before execution: aggressive (masscan, naabu, high-rate scans), credential_testing (hydra), external_agents (Strix, PentAGI, Sn1per), destructive (reserved). allow_passive_sources enables subfinder's third-party sources. allowed_wordlists and allowed_nuclei_templates are exact paths for ffuf/nuclei; files under the local kali wordlist and nuclei-template directories are accepted without listing."
 }

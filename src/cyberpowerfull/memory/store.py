@@ -1,19 +1,20 @@
 """Deterministic, append-only memory layer (Layer 3 of the brain).
 
-Storage is SQLite with triggers that reject UPDATE and DELETE, so history cannot
-be rewritten. The reasoning model only ever receives a :class:`MemoryView`
-(reads only); writes happen exclusively inside the orchestrator after a tool has
-actually produced evidence.
+SQLite triggers reject ordinary UPDATE and DELETE statements; someone with
+filesystem or schema access can still alter history. The reasoning model receives
+a read-only :class:`MemoryView`; the orchestrator records steps and evidence.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 
+from cyberpowerfull.errors import MemoryError_
 from cyberpowerfull.memory import SCHEMA_VERSION  # noqa: F401 - re-exported for callers
 from cyberpowerfull.models import Finding, Phase, Severity, utcnow
 
@@ -58,7 +59,9 @@ CREATE TABLE IF NOT EXISTS attempts (
     error TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_attempts_key ON attempts(tool, args_hash);
+CREATE INDEX IF NOT EXISTS idx_attempts_run_key ON attempts(run_id, tool, args_hash);
+CREATE INDEX IF NOT EXISTS idx_steps_run ON steps(run_id);
+CREATE INDEX IF NOT EXISTS idx_findings_run ON findings(run_id);
 CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);
 
 CREATE TRIGGER IF NOT EXISTS steps_no_update BEFORE UPDATE ON steps
@@ -102,7 +105,16 @@ class MemoryStore:
         self.path = str(path)
         self.run_id = run_id
         if self.path != ":memory:":
-            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+            db_path = Path(self.path)
+            db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            try:
+                fd = os.open(db_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                if db_path.is_symlink() or not db_path.is_file():
+                    raise MemoryError_(f"memory path must be a regular file: {db_path}") from None
+                os.chmod(db_path, 0o600)
+            else:
+                os.close(fd)
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
@@ -188,7 +200,10 @@ class MemoryStore:
 
     # -- reads -------------------------------------------------------------
     def findings(self) -> list[Finding]:
-        rows = self._conn.execute("SELECT payload_json FROM findings ORDER BY id ASC").fetchall()
+        rows = self._conn.execute(
+            "SELECT payload_json FROM findings WHERE run_id = ? ORDER BY id ASC",
+            (self.run_id,),
+        ).fetchall()
         findings: list[Finding] = []
         for row in rows:
             try:
@@ -199,7 +214,9 @@ class MemoryStore:
 
     def steps(self) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            "SELECT step, ts, phase, tool, ok, reason, args_hash FROM steps ORDER BY id ASC"
+            "SELECT step, ts, phase, tool, ok, reason, args_hash FROM steps "
+            "WHERE run_id = ? ORDER BY id ASC",
+            (self.run_id,),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -207,24 +224,40 @@ class MemoryStore:
         """Return the last failure message for this exact invocation, if any."""
         key = args_hash(tool, args)
         row = self._conn.execute(
-            "SELECT ok, error FROM attempts WHERE tool = ? AND args_hash = ? "
+            "SELECT ok, error FROM attempts WHERE run_id = ? AND tool = ? AND args_hash = ? "
             "ORDER BY id DESC LIMIT 1",
-            (tool, key),
+            (self.run_id, tool, key),
         ).fetchone()
         if row is None or row["ok"]:
             return None
         return str(row["error"] or "previous attempt failed")
 
+    def consecutive_failures(self, tool: str, args: dict[str, Any], limit: int = 2) -> int:
+        """Count recent consecutive failures for this invocation in the current run."""
+        rows = self._conn.execute(
+            "SELECT ok FROM attempts WHERE run_id = ? AND tool = ? AND args_hash = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (self.run_id, tool, args_hash(tool, args), limit),
+        ).fetchall()
+        failures = 0
+        for row in rows:
+            if row["ok"]:
+                break
+            failures += 1
+        return failures
+
     def success_rate(self, tool: str | None = None) -> float:
         """Historical success rate, used by TDA. Zero attempts -> 0.0."""
         if tool:
             row = self._conn.execute(
-                "SELECT COUNT(*) AS total, SUM(ok) AS wins FROM attempts WHERE tool = ?",
-                (tool,),
+                "SELECT COUNT(*) AS total, SUM(ok) AS wins FROM attempts "
+                "WHERE run_id = ? AND tool = ?",
+                (self.run_id, tool),
             ).fetchone()
         else:
             row = self._conn.execute(
-                "SELECT COUNT(*) AS total, SUM(ok) AS wins FROM attempts"
+                "SELECT COUNT(*) AS total, SUM(ok) AS wins FROM attempts WHERE run_id = ?",
+                (self.run_id,),
             ).fetchone()
         total = int(row["total"] or 0)
         if total == 0:
@@ -266,7 +299,9 @@ class MemoryStore:
                     f"tool={finding.tool} verified={finding.verified} id={finding.id}"
                 )
         failures = self._conn.execute(
-            "SELECT tool, COUNT(*) AS n FROM attempts WHERE ok = 0 GROUP BY tool ORDER BY n DESC"
+            "SELECT tool, COUNT(*) AS n FROM attempts WHERE run_id = ? AND ok = 0 "
+            "GROUP BY tool ORDER BY n DESC",
+            (self.run_id,),
         ).fetchall()
         if failures:
             lines.append("failed_attempts_by_tool:")
@@ -277,12 +312,19 @@ class MemoryStore:
     def stats(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
-            "steps": int(self._conn.execute("SELECT COUNT(*) FROM steps").fetchone()[0]),
-            "findings": int(self._conn.execute("SELECT COUNT(*) FROM findings").fetchone()[0]),
-            "attempts": int(self._conn.execute("SELECT COUNT(*) FROM attempts").fetchone()[0]),
+            "steps": self._count("steps"),
+            "findings": self._count("findings"),
+            "attempts": self._count("attempts"),
             "success_rate": self.success_rate(),
             "evidence_confidence": self.evidence_confidence(),
         }
+
+    def _count(self, table: str) -> int:
+        # Only fixed internal table names are passed here.
+        row = self._conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE run_id = ?", (self.run_id,)
+        ).fetchone()
+        return int(row[0])
 
     def view(self) -> MemoryView:
         """Read-only projection handed to the prompt builder."""

@@ -205,10 +205,25 @@ STRIX_STDOUT = """[HIGH] SQL Injection in /login (CVE-2024-0002)
 
 
 def _run_with(stdout: str, returncode: int = 0):
+    """Patch subprocess.run and feed the spooled stdout/stderr files.
+
+    The tool layer spools process output to temporary files instead of holding it
+    in memory, so a mock that only sets ``return_value.stdout`` would look like a
+    silent empty result.
+    """
+
+    def fake_run(argv, **kwargs):
+        for key, payload in (("stdout", stdout), ("stderr", "")):
+            handle = kwargs.get(key)
+            handle.write(payload.encode())
+            handle.flush()
+            handle.seek(0)
+        return completed(stdout, "", returncode)
+
     return (
         mock.patch(
             "cyberpowerfull.tools.base.subprocess.run",
-            return_value=completed(stdout, "", returncode),
+            side_effect=fake_run,
         ),
         mock.patch(
             "cyberpowerfull.tools.base.shutil.which",

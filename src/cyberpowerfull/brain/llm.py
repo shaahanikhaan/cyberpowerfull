@@ -14,13 +14,16 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
+import time
 from dataclasses import dataclass, field
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any, ClassVar, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import urlparse, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from pydantic import ValidationError
 
@@ -49,10 +52,23 @@ def is_loopback_host(host: str) -> bool:
 
 def assert_local_endpoint(endpoint: str) -> str:
     """Reject any inference endpoint that is not loopback."""
-    parsed = urlparse(endpoint)
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme not in {"http", "https"} or not host:
-        raise LLMError(f"invalid inference endpoint: {endpoint!r}")
+    try:
+        parsed = urlparse(endpoint)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not host
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or port == 0
+            or any(ord(ch) <= 32 or ord(ch) == 127 for ch in endpoint)
+        ):
+            raise ValueError("invalid endpoint authority")
+    except ValueError as exc:
+        raise LLMError(f"invalid inference endpoint: {endpoint!r}") from exc
     if not is_loopback_host(host):
         raise LLMError(
             f"refusing non-local inference endpoint {host!r}: this agent runs local models only "
@@ -98,7 +114,32 @@ class LLMClient(Protocol):
         """Return backend reachability information for ``--check``."""
 
 
-def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
+class _NoRedirect(HTTPRedirectHandler):
+    """Never allow a local model server to redirect prompt data elsewhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(req.full_url, code, "inference redirects are disabled", headers, fp)
+
+
+def _local_open(request: Request | str, *, timeout: float):
+    """Open without proxies or redirects; pin localhost to a loopback address."""
+    if isinstance(request, str):
+        request = Request(request)
+    parts = urlsplit(request.full_url)
+    assert_local_endpoint(urlunsplit((parts.scheme, parts.netloc, "", "", "")))
+    if parts.hostname and parts.hostname.lower() == "localhost":
+        netloc = "127.0.0.1" + (f":{parts.port}" if parts.port else "")
+        request = Request(
+            urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment)),
+            data=request.data,
+            headers={**dict(request.header_items()), "Host": parts.netloc},
+            method=request.get_method(),
+        )
+    opener = build_opener(ProxyHandler({}), _NoRedirect())
+    return opener.open(request, timeout=timeout)
+
+
+def _post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -107,8 +148,11 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
         method="POST",
     )
     try:
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode("utf-8", errors="replace")
+        with _local_open(request, timeout=timeout) as response:
+            body = response.read(2_000_001)
+            if len(body) > 2_000_000:
+                raise LLMError("inference response exceeds 2 MB")
+            raw = body.decode("utf-8", errors="replace")
     except HTTPError as exc:  # pragma: no cover - depends on server behaviour
         raise LLMError(f"inference HTTP error {exc.code} from {url}") from exc
     except URLError as exc:
@@ -118,22 +162,42 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
         ) from exc
     except TimeoutError as exc:
         raise LLMError(f"inference request to {url} timed out") from exc
+    except (OSError, HTTPException) as exc:
+        raise LLMError(f"inference connection to {url} failed: {exc}") from exc
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise LLMError(f"inference endpoint returned non-JSON body: {raw[:200]!r}") from exc
+    if not isinstance(result, dict):
+        raise LLMError("inference endpoint returned a JSON value that is not an object")
+    return result
 
 
 def _get_json(url: str, timeout: int) -> dict[str, Any]:
     try:
-        with urlopen(url, timeout=timeout) as response:
-            raw = response.read().decode("utf-8", errors="replace")
-    except (HTTPError, URLError, TimeoutError) as exc:
+        with _local_open(url, timeout=timeout) as response:
+            body = response.read(2_000_001)
+            if len(body) > 2_000_000:
+                raise LLMError("inference response exceeds 2 MB")
+            raw = body.decode("utf-8", errors="replace")
+    except (OSError, HTTPException) as exc:
         raise LLMError(f"inference endpoint unreachable: {url} ({exc})") from exc
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:  # pragma: no cover - server specific
+        result = json.loads(raw)
+    except json.JSONDecodeError as exc:
         raise LLMError(f"inference endpoint returned non-JSON body: {raw[:200]!r}") from exc
+    if not isinstance(result, dict):
+        raise LLMError("inference endpoint returned a JSON value that is not an object")
+    return result
+
+
+def _request_timeout(timeout: float, deadline: float | None) -> float:
+    if deadline is None:
+        return timeout
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise LLMError("run time budget exhausted before inference request")
+    return min(timeout, remaining)
 
 
 @dataclass
@@ -146,10 +210,14 @@ class OllamaClient:
     context_window: int = 32768
     timeout: int = 180
     max_retries: int = 2
+    deadline: float | None = field(default=None, repr=False)
     backend: ClassVar[str] = "ollama"
 
     def __post_init__(self) -> None:
         self.endpoint = assert_local_endpoint(self.endpoint)
+
+    def set_deadline(self, deadline: float) -> None:
+        self.deadline = deadline
 
     def decide(self, system_prompt: str, step_prompt: str, *, step: int = 0) -> Decision:
         payload = {
@@ -166,16 +234,22 @@ class OllamaClient:
                 "num_predict": 512,
             },
         }
+        if self.model.lower().startswith("qwen3"):
+            payload["think"] = False
         last_error: Exception | None = None
         for _ in range(max(1, self.max_retries)):
             try:
-                data = _post_json(f"{self.endpoint}/api/chat", payload, self.timeout)
+                data = _post_json(
+                    f"{self.endpoint}/api/chat",
+                    payload,
+                    _request_timeout(self.timeout, self.deadline),
+                )
+                message = data.get("message")
+                if not isinstance(message, dict):
+                    raise LLMError("ollama response has no message object")
+                return parse_decision(str(message.get("content") or ""), step=step)
             except LLMError as exc:
                 last_error = exc
-                continue
-            message = data.get("message") or {}
-            content = str(message.get("content") or "")
-            return parse_decision(content, step=step)
         raise LLMError(str(last_error) if last_error else "ollama inference failed")
 
     def health(self) -> dict[str, Any]:
@@ -188,14 +262,20 @@ class OllamaClient:
                 "endpoint": self.endpoint,
                 "error": str(exc),
             }
-        models = [str(item.get("name", "")) for item in data.get("models", [])]
+        raw_models = data.get("models")
+        if not isinstance(raw_models, list):
+            return {"ok": False, "backend": self.backend, "error": "invalid Ollama model list"}
+        models = [str(item.get("name", "")) for item in raw_models if isinstance(item, dict)]
+        requested = self.model if ":" in self.model else f"{self.model}:latest"
+        normalized = [model if ":" in model else f"{model}:latest" for model in models]
+        ok = requested in normalized
         return {
-            "ok": self.model in models
-            or any(m.split(":")[0] == self.model.split(":")[0] for m in models),
+            "ok": ok,
             "backend": self.backend,
             "endpoint": self.endpoint,
             "model": self.model,
             "models": models[:20],
+            **({} if ok else {"error": f"model {self.model!r} is not installed"}),
         }
 
 
@@ -209,10 +289,14 @@ class LlamaCppClient:
     context_window: int = 32768
     timeout: int = 180
     max_retries: int = 2
+    deadline: float | None = field(default=None, repr=False)
     backend: ClassVar[str] = "llamacpp"
 
     def __post_init__(self) -> None:
         self.endpoint = assert_local_endpoint(self.endpoint)
+
+    def set_deadline(self, deadline: float) -> None:
+        self.deadline = deadline
 
     def decide(self, system_prompt: str, step_prompt: str, *, step: int = 0) -> Decision:
         payload = {
@@ -229,16 +313,20 @@ class LlamaCppClient:
         last_error: Exception | None = None
         for _ in range(max(1, self.max_retries)):
             try:
-                data = _post_json(f"{self.endpoint}/v1/chat/completions", payload, self.timeout)
+                data = _post_json(
+                    f"{self.endpoint}/v1/chat/completions",
+                    payload,
+                    _request_timeout(self.timeout, self.deadline),
+                )
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                    raise LLMError("llama.cpp returned no choices")
+                message = choices[0].get("message")
+                if not isinstance(message, dict):
+                    raise LLMError("llama.cpp response has no message object")
+                return parse_decision(str(message.get("content") or ""), step=step)
             except LLMError as exc:
                 last_error = exc
-                continue
-            choices = data.get("choices") or []
-            if not choices:
-                last_error = LLMError("llama.cpp returned no choices")
-                continue
-            message = choices[0].get("message") or {}
-            return parse_decision(str(message.get("content") or ""), step=step)
         raise LLMError(str(last_error) if last_error else "llama.cpp inference failed")
 
     def health(self) -> dict[str, Any]:
@@ -251,11 +339,14 @@ class LlamaCppClient:
                 "endpoint": self.endpoint,
                 "error": str(exc),
             }
+        models = data.get("data")
+        if not isinstance(models, list):
+            return {"ok": False, "backend": self.backend, "error": "invalid llama.cpp model list"}
         return {
-            "ok": bool(data.get("data")),
+            "ok": bool(models),
             "backend": self.backend,
             "endpoint": self.endpoint,
-            "models": [str(item.get("id", "")) for item in data.get("data", [])][:20],
+            "models": [str(item.get("id", "")) for item in models if isinstance(item, dict)][:20],
         }
 
 
@@ -283,6 +374,8 @@ class ReplayClient:
             raw = json.loads(file_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise LLMError(f"replay stream is not valid JSON: {file_path}: {exc}") from exc
+        except (OSError, UnicodeError) as exc:
+            raise LLMError(f"replay stream could not be read: {file_path}: {exc}") from exc
         items = raw.get("decisions") if isinstance(raw, dict) else raw
         if not isinstance(items, list):
             raise LLMError("replay stream must be a list or {'decisions': [...]}")
@@ -322,12 +415,21 @@ class ReplayClient:
 
 def build_client(spec: str | None = None, config: ModelConfig | None = None) -> LLMClient:
     """Build a local client from a ``backend[:model]`` / ``replay:path`` spec."""
-    cfg = config or ModelConfig.from_env()
+    try:
+        cfg = config or ModelConfig.from_env()
+    except (TypeError, ValueError) as exc:
+        raise LLMError(f"invalid local inference configuration: {exc}") from exc
+    if cfg.request_timeout <= 0 or cfg.context_window <= 0 or cfg.max_retries <= 0:
+        raise LLMError("inference timeout, context window and retry count must be positive")
     spec = (spec or f"{cfg.backend}:{cfg.model}").strip()
     if spec.startswith("replay:"):
         return ReplayClient(path=spec.split(":", 1)[1])
     backend, _, model = spec.partition(":")
     backend = (backend or cfg.backend).lower()
+    aliases = {"llama.cpp", "llama_cpp", "llama-server"}
+    if backend in aliases:
+        backend = "llamacpp"
+    configured_backend = "llamacpp" if cfg.backend.lower() in aliases else cfg.backend.lower()
     if "://" in model:
         # ``ollama:http://host:11434`` is a common slip: the endpoint is a config
         # value (CYBERPOWERFULL_LLM_ENDPOINT / ModelConfig), not part of the model id.
@@ -338,9 +440,12 @@ def build_client(spec: str | None = None, config: ModelConfig | None = None) -> 
             f"(loopback only, currently {cfg.endpoint!r})"
         )
     model = model or cfg.model
-    endpoint = (
-        cfg.endpoint if backend == cfg.backend else DEFAULT_ENDPOINTS.get(backend, cfg.endpoint)
-    )
+    configured_default = DEFAULT_ENDPOINTS.get(configured_backend, DEFAULT_ENDPOINT)
+    explicit_env_endpoint = config is None and "CYBERPOWERFULL_LLM_ENDPOINT" in os.environ
+    if backend == configured_backend or explicit_env_endpoint or cfg.endpoint != configured_default:
+        endpoint = cfg.endpoint
+    else:
+        endpoint = DEFAULT_ENDPOINTS.get(backend, cfg.endpoint)
     if backend == "ollama":
         return OllamaClient(
             model=model,
@@ -350,10 +455,10 @@ def build_client(spec: str | None = None, config: ModelConfig | None = None) -> 
             timeout=cfg.request_timeout,
             max_retries=cfg.max_retries,
         )
-    if backend in {"llamacpp", "llama.cpp", "llama_cpp", "llama-server"}:
+    if backend == "llamacpp":
         return LlamaCppClient(
             model=model,
-            endpoint=endpoint if backend == "llamacpp" else DEFAULT_ENDPOINTS["llamacpp"],
+            endpoint=endpoint,
             temperature=cfg.temperature,
             context_window=cfg.context_window,
             timeout=cfg.request_timeout,

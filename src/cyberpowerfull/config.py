@@ -28,10 +28,13 @@ class ModelConfig:
 
     @classmethod
     def from_env(cls) -> ModelConfig:
+        backend = os.environ.get("CYBERPOWERFULL_LLM_BACKEND", "ollama")
+        is_llamacpp = backend.lower() in {"llamacpp", "llama.cpp", "llama_cpp", "llama-server"}
+        default_endpoint = "http://127.0.0.1:8080" if is_llamacpp else DEFAULT_ENDPOINT
         return cls(
-            backend=os.environ.get("CYBERPOWERFULL_LLM_BACKEND", "ollama"),
+            backend=backend,
             model=os.environ.get("CYBERPOWERFULL_MODEL", DEFAULT_MODEL),
-            endpoint=os.environ.get("CYBERPOWERFULL_LLM_ENDPOINT", DEFAULT_ENDPOINT),
+            endpoint=os.environ.get("CYBERPOWERFULL_LLM_ENDPOINT", default_endpoint),
             temperature=float(os.environ.get("CYBERPOWERFULL_TEMPERATURE", "0.1")),
             context_window=int(os.environ.get("CYBERPOWERFULL_CONTEXT_WINDOW", "32768")),
             request_timeout=int(os.environ.get("CYBERPOWERFULL_LLM_TIMEOUT", "180")),
@@ -75,17 +78,20 @@ class RunConfig:
         return replace(self, **clean)  # type: ignore[arg-type]
 
     def ensure_dirs(self) -> None:
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.memory_path.parent.mkdir(parents=True, exist_ok=True)
-        self.trace_path.parent.mkdir(parents=True, exist_ok=True)
+        self.out_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.memory_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.trace_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
 @dataclass(frozen=True)
 class ToolPolicy:
     """Deterministic guardrails applied around every subprocess invocation."""
 
-    timeout_s: int = 300
+    timeout_s: float = 300
     max_output_bytes: int = 2_000_000
+    # None is useful for direct wrapper use; workers always set the scope limit.
+    max_rps: float | None = None
+    excluded_networks: tuple[str, ...] = ()
     env_deny_prefixes: tuple[str, ...] = field(
         default=(
             "OPENAI",
@@ -93,17 +99,22 @@ class ToolPolicy:
             "AZURE_OPENAI",
             "GOOGLE_API",
             "GEMINI",
-            "AWS_SECRET",
+            "AWS_",
+            "AZURE_",
+            "CLOUDSDK_",
+            "GOOGLE_",
+            "GITHUB_",
+            "GITLAB_",
             "HUGGINGFACE",
             "HF_TOKEN",
         )
     )
 
     def sanitized_env(self, base: dict[str, str] | None = None) -> dict[str, str]:
-        """Return an environment with cloud-inference credentials stripped.
+        """Strip common cloud credentials and proxy variables from tool subprocesses.
 
-        Tool subprocesses must never be able to reach a cloud model, so API keys
-        and provider credentials are removed before execution.
+        This is best-effort hygiene, not a network or filesystem sandbox; tools
+        may have access to other credentials and configuration files.
         """
         source = dict(os.environ if base is None else base)
         clean: dict[str, str] = {}
@@ -111,7 +122,9 @@ class ToolPolicy:
             upper = key.upper()
             if any(upper.startswith(prefix) for prefix in self.env_deny_prefixes):
                 continue
-            if upper.endswith("_API_KEY") or upper.endswith("_TOKEN"):
+            if upper in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}:
+                continue
+            if upper.endswith(("_API_KEY", "_TOKEN", "_SECRET", "_PASSWORD")):
                 continue
             clean[key] = value
         return clean

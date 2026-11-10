@@ -157,10 +157,8 @@ class AttackTree:
                 parent=node_id,
             )
             added.append(child.id)
-        if parent.status is NodeStatus.OPEN:
+        if added and parent.status is NodeStatus.OPEN:
             parent.status = NodeStatus.EXPANDED
-        if not added and parent.status is NodeStatus.OPEN:
-            parent.status = NodeStatus.EXHAUSTED
         return added
 
     # -- selection ---------------------------------------------------------

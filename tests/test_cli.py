@@ -119,7 +119,7 @@ class TestCheck:
         assert code == 0
 
     def test_check_reports_unreachable_model(self, workdir: Path, capsys) -> None:
-        with mock.patch("cyberpowerfull.brain.llm.urlopen", side_effect=URLError("refused")):
+        with mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")):
             code = main(["--check", "--scope", str(workdir / "scope.json")])
         assert code == 5
         assert "model error" in capsys.readouterr().out
@@ -315,7 +315,7 @@ class TestEndToEndRun:
         capsys.readouterr()
 
     def test_inference_failure_exit_code(self, workdir: Path, capsys) -> None:
-        with mock.patch("cyberpowerfull.brain.llm.urlopen", side_effect=URLError("refused")):
+        with mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")):
             code = main(
                 [
                     "--scope",
@@ -333,7 +333,7 @@ class TestEndToEndRun:
                     "--quiet",
                 ]
             )
-        assert code == 0  # run itself completed with stop_reason=inference_failed
+        assert code == 5  # failure is surfaced even though the trace is saved
         trace = json.loads((workdir / "trace.json").read_text())
         assert trace["stop_reason"] == "inference_failed"
         assert "unreachable" in trace["error"]

@@ -8,7 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 This release makes the agent substantially more capable without weakening the authorization
 model. Every addition runs through the same worker guardrails: scope re-check, phase check,
-capability gate, negative cache, argv-only execution.
+capability gate, negative cache, argv-only execution. It also carries the readiness and
+safety hardening recorded below that landed on `main` while this release was in progress.
 
 ### Added
 
@@ -63,7 +64,51 @@ capability gate, negative cache, argv-only execution.
 - Masscan JSON parsing tolerates the progress banners it prints before the JSON body.
 - PentAGI reports that are JSON are parsed as records instead of being scraped as prose.
 
-## [Unreleased] — Pentest-Only Hard Fork
+## [2.1.0] — Readiness and Safety Hardening
+
+### Fixed
+
+- Isolated all SQLite memory reads, aggregates and negative-cache lookups by run; preserve
+  independent findings when the same database is reused.
+- Return non-zero exit codes for failed inference, blocked policy actions and failed/incomplete
+  tool calls while saving traces and reports when possible. Keep `--json` stdout parseable and
+  retain the original target URL and port in the objective.
+- Harden scope parsing (exact targets, explicit wildcard semantics, strict authorization boolean,
+  IPv4-mapped IPv6 exclusions), re-check expiry, suppress out-of-scope findings, and check DNS
+  exclusions before native and third-party calls where possible.
+- Pace native TCP connections and pass per-tool rate hints, limit scanner redirects and update
+  checks, require operator-approved ffuf wordlists and Nuclei template files, and require opt-in
+  for passive third-party sources. These are guardrails, not an egress or rate-limit sandbox.
+- Prevent inference redirects and environment-proxy use, honor custom local endpoints and exact
+  Ollama tags, retry malformed model responses, and check time/token budgets before tool execution.
+- Report truncated output and ambiguous scanner failures instead of silently claiming success;
+  treat Nuclei matches and SQL heuristics conservatively and do not identify a service by port alone.
+- Write new traces, reports and memory with owner-only POSIX permissions; validate replay IDs and
+  schemas before constructing output filenames; escape untrusted Markdown report content and fix
+  duplicate findings and attack-tree expansion at depth limits.
+- Start the engagement scope template unauthorized until the operator explicitly enables it;
+  update wheel license metadata for modern Python packaging.
+- Reject numeric-only host aliases (such as hexadecimal IPv4) and apply IPv4-mapped IPv6 CIDR
+  exclusions consistently to their IPv4 equivalents.
+- Treat an interrupted model response as a reported inference failure rather than a crash; keep
+  the original URL in `--render-prompt` and deduplicate repeated finding IDs within a trace batch.
+- Round scanner request delays upward to whole milliseconds, refuse unrepresentable rates, expand
+  `~` in permitted ffuf wordlists, and stop inventing a CVSS score for Dalfox findings.
+- Treat a zero-exit SQLMap run as success only when it completes with a clean or confirmed result;
+  connection failures and unrecognised output are now surfaced as errors.
+- Let `--help`, `--version` and explicit budget flags work even when an environment budget value
+  is malformed; invalid environment values are reported only when they would actually be used.
+
+### Added
+
+- A copy/paste loopback lab using recorded decisions and the native TCP probe, with no model or
+  scanner binary required after dependency installation.
+- Regression tests using real loopback TCP and mock-model HTTP services, plus a documented
+  [readiness audit](docs/readiness-audit.md) with upstream references and remaining limitations.
+- An opt-in live SQLMap integration test (`CYBERPOWERFULL_RUN_SQLMAP_TEST=1`) that starts an
+  ephemeral loopback fixture and checks clean, positive and connection-failure outcomes.
+
+## [2.0.0 baseline] — Pentest-Only Hard Fork
 
 This release replaces the previous general-purpose automation framework with a focused,
 autonomous, penetration-testing-only agent. Nothing from the old rule-based "brain" survives.
@@ -130,7 +175,8 @@ autonomous, penetration-testing-only agent. Nothing from the old rule-based "bra
 - Findings are now typed objects with severity, confidence, verification state, CWE/CVE, CVSS,
   remediation, and evidence; duplicates are suppressed and every finding is persisted to
   append-only memory before it appears in a report.
-- `nuclei` runs with `-no-interactsh` so no target data leaves the machine.
+- `nuclei` runs with `-no-interactsh` to disable Interactsh; this flag alone does not prevent
+  all outbound traffic.
 
 ### Removed
 

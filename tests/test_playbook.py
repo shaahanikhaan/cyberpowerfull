@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -62,6 +63,10 @@ class StubTool:
         self.external = False
         self.calls: list[dict] = []
         self._installed = installed
+
+    def validate(self, raw_args: dict):
+        """Mirror BaseTool.validate: the worker re-checks the canonical target."""
+        return SimpleNamespace(target=str(raw_args.get("target", "127.0.0.1")))
 
     def describe(self) -> dict:
         return {

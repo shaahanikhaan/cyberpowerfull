@@ -25,11 +25,11 @@ templates, NSE scripts), and no cloud API key, no Docker for the core loop, and 
 |---|---|
 | Reasoning | local open-weight model (Qwen3-4B / equivalent) via Ollama or llama.cpp — optional |
 | Automation | 6 deterministic playbooks, 34 ordered steps, parallel groups, fact-driven adaptivity |
-| Typed tools | 26 (18 CLI wrappers, 1 native connector, 3 external-agent adapters, 4 core scanners) |
+| Typed tools | 26 (22 CLI wrappers, 1 native connector, 3 external-agent adapters) |
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
-| Tests | 466 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Tests | 582 tests, 88% line coverage, `pytest --cov-fail-under=70` enforced in CI |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
 
 > **This repository is pentest-only.** The previous general-purpose "assistant" surface, the
@@ -71,8 +71,31 @@ and no interactive confirmation prompt that a user could click through.
 - Recovered passwords from `hydra` are redacted in evidence. Traces and reports are engagement
   artefacts, not a credential store.
 
+**These checks are guardrails, not an operating-system or network sandbox.** Read the precise
+limits before pointing the agent at anything that matters:
+
+- Scope is **host-based**: exact hosts/IPs, CIDRs, `example.test` (apex + subdomains), and
+  `*.example.test` (subdomains only). It does not restrict ports, paths, or HTTP methods;
+  exclusions win over inclusions.
+- A DNS answer inside an excluded network is blocked before the native TCP probe and checked
+  best-effort before other scanners. External tools may resolve again — enforce exclusions at the
+  network boundary too.
+- `max_rps` paces native TCP connects and is translated into supported scanner rate/delay flags.
+  It is **not a guaranteed global traffic limit**: retries, templates, DNS, subprocesses, and
+  parallel groups can exceed it.
+- `subfinder` is blocked unless `allow_passive_sources` is set; `ffuf` and `nuclei` accept only
+  operator-listed files or files from the local wordlist/template libraries. Indexes are the
+  operator's responsibility — review templates before granting them.
+- Third-party scanners, templates, and target responses can produce traffic this process cannot
+  inspect. Run on an isolated host with egress rules, use test accounts, and watch the run.
+- A finding is an observation or a tool-reported candidate, **not proof of impact**. An open port
+  does not identify a service; a template match is unverified until the evidence says otherwise.
+- Traces, reports, and SQLite memory can contain URLs, cookies, request bodies, and model output.
+  New files are owner-only on POSIX but not encrypted; protect and delete them per the agreement.
+
 Test only assets you are contractually authorized to test. Unauthorized access to computer
-systems is a criminal offence in most jurisdictions. See [SECURITY.md](SECURITY.md).
+systems is a criminal offence in most jurisdictions. See [SECURITY.md](SECURITY.md) and the
+[readiness audit](docs/readiness-audit.md) for verified behaviour and residual risk.
 
 ---
 
@@ -166,32 +189,42 @@ src/cyberpowerfull/
 
 ## Quick Start
 
-Three commands, no API key, no Docker:
+A runnable loopback lab: a local listener, one real run against it with a recorded decision
+stream, then the trace rendered back for review. No model, no binaries, no network.
 
 ```bash
-pip install -e .
-python -m cyberpowerfull.cli --scope scope.json --target example.com
-python -m cyberpowerfull.cli --replay traces/latest.json
+python -m pip install -e .
+python -m http.server 8000 --bind 127.0.0.1 &
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --llm replay:examples/decisions.json
+cyberpowerfull --replay traces/latest.json
 ```
 
-Before the second command, one of:
+The bundled `scope.json` authorises `127.0.0.1` and `localhost` only, so this works out of the box.
+`examples/decisions.json` is a recorded decision stream (`replay:` backend), which makes the run
+deterministic; `examples/trace-example.json` is the trace it produces.
+
+### Use a local model
 
 ```bash
 ollama serve & ollama pull qwen3:4b              # Ollama backend (default)
 llama-server -m qwen3-4b-instruct.gguf -c 32768  # llama.cpp backend, then --llm llamacpp:qwen3
+
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --llm ollama:qwen3:4b
 ```
 
-`scope.json` in the repository root is a loopback-only lab scope. Copy `scope.example.json` and
-replace the targets, authorization reference, expiry, and capability list with your engagement
-values. The agent will not start otherwise.
+Before pointing it at a real engagement, copy `scope.example.json`, set `authorized` to `true`
+only after you hold written authorization, replace the targets, and grant only the capabilities
+the engagement needs. The agent will not start otherwise.
 
-No model installed? Use a playbook — it runs the same tools with no inference at all:
+### Or skip the model entirely
+
+Playbooks run the same tools with no inference at all:
 
 ```bash
 python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --playbook network
 ```
 
-### What the first run actually does
+### What a playbook run actually does
 
 ```
 $ cyberpowerfull --scope scope.json --target 127.0.0.1 --playbook network
@@ -204,14 +237,13 @@ findings:    2 [info=2]
 executed:    1 step(s): net-tcp
 skipped:     8
   - net-nmap: binary not installed: nmap
-  - net-naabu: requires capability 'aggressive' (not granted by scope.json)
+  - net-naabu: binary not installed: naabu
   - net-services: binary not installed: nmap
 ```
 
-Every skipped step states the real reason. Nothing is simulated: if the binary is missing or the
-capability is absent, the step does not run and the report says so.
-
----
+Every skipped step states the real reason, and the same list is written into the trace
+(`skipped`) and the report (`## Skipped steps`). Nothing is simulated: if the binary is missing or
+the capability is absent, the step does not run and the artifacts say so.
 
 ## Automation playbooks
 
@@ -312,6 +344,9 @@ python -m cyberpowerfull.cli --check --scope scope.json --target 127.0.0.1
 python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --dry-run
 python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --playbook web --dry-run
 
+# Emit the whole trace as JSON on stdout (parseable; reports are still written)
+python -m cyberpowerfull.cli --scope scope.json --target 127.0.0.1 --playbook network --json
+
 # Inspect what the model is told (regenerate the system prompt)
 python -m cyberpowerfull.cli --render-prompt --scope scope.json --target 127.0.0.1
 
@@ -330,14 +365,18 @@ Artifacts: `traces/latest.json` (structured run trace), `artifacts/report-<run_i
 
 | Code | Meaning |
 |---|---|
-| 0 | run completed (any stop condition: tree exhausted, budget, terminate, critical finding) |
+| 0 | run completed, every executed action succeeded (tree exhausted, budget, terminate, critical finding) |
+| 1 | unexpected fatal error (e.g. the system prompt could not be rendered) |
 | 2 | usage error |
 | 3 | `scope.json` missing, invalid, unauthorized, or expired |
 | 4 | target outside the authorized scope |
 | 5 | local inference unavailable |
-| 6 | tool argument/execution error, or a missing local knowledge source |
-| 7 | policy violation by the reasoning model (e.g. the root agent tried to run a scanner) |
+| 6 | a tool errored, was missing or timed out, or a local knowledge source is absent |
+| 7 | policy violation or a blocked delegation (the root agent tried to run a scanner itself) |
 | 8 | unknown playbook name |
+
+A failed or incomplete run still writes its trace and reports, then exits non-zero so scripts and
+CI cannot mistake it for a clean result.
 
 ---
 
@@ -481,7 +520,7 @@ API-key code path for inference and none will be added.
 pip install -e ".[dev]"
 ruff check .
 black --check .
-pytest                      # 466 tests, coverage gate (70%) in pyproject.toml addopts
+pytest                      # 582 tests, coverage gate (70%) in pyproject.toml addopts
 pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```
 

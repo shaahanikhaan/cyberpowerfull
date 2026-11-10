@@ -250,7 +250,7 @@ class TestRunLoop:
         )
         result = orchestrator.run()
         assert result.stop_reason == "budget_exhausted:tokens"
-        assert len(result.trace.steps) == 1
+        assert len(result.trace.steps) == 0
 
     def test_seconds_budget(self, scope) -> None:
         orchestrator, _, _ = build(
