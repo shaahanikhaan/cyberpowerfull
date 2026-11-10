@@ -62,6 +62,9 @@ SKILL_NAMES = [
 
 TOOL_NAMES = [
     "tcp_probe",
+    "http_probe",
+    "payload",
+    "cve_correlate",
     "subfinder",
     "amass",
     "dnsrecon",

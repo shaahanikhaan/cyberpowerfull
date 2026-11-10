@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cyberpowerfull"
 version = "3.2.0"
 description = "Local-only autonomous penetration-testing agent: model-backed reasoning, typed tool layer, deterministic memory."
+description = "Local-only autonomous penetration-testing agent: model-backed reasoning, typed tool layer, offline CVE intel, deterministic memory."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

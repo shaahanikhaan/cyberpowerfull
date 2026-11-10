@@ -52,6 +52,57 @@ audit, extend, or release cleanly is not a professional tool.
 - No behaviour change to the agent, the guardrails, or the artefacts. Everything in
   `docs/HANDOFF.md §4` still holds, and the tests that enforce it are unchanged.
 
+## [3.2.0] — Offline CVE intelligence and proof-only payloads
+
+Everything in this release runs locally: no cloud key, no scanner binary, no network call made
+by the agent itself. Feeds are files the operator fetched; payloads are proof vectors, not
+weapons; candidates stay unverified until evidence confirms them.
+
+### Added
+
+- **Offline advisory corpus** (`intel/`): SQLite store with merge-on-import semantics
+  (severity maximum, CVSS maximum, KEV flag OR, references unioned, no detail loss), a
+  dependency-free version tokeniser/ranger (`2.4.49`, `9.6p1`, `2.0-beta9`), and a curated
+  bundled snapshot of 12 verifiable advisories with fixed intervals.
+- **Feed importers** for NVD 2.0 JSON, NVD 1.1 JSON, CISA KEV JSON, and a native format, with
+  format auto-detection, CPE parsing, and per-row error accounting. Importer errors never abort
+  a feed.
+- **Deterministic CVE correlation**: component → advisory matching with product aliases, range
+  membership, confidence scoring, severity capping for unversioned components, and
+  `verified=False` candidate findings that include the matched range, CVSS, KEV status, and
+  remediation. Newly published 2025–2026 CVEs are covered as soon as the operator imports a
+  current feed; the agent never invents an advisory.
+- **Native HTTP probe tool** (`http_probe`): one bounded, scope-checked request with header and
+  body allowlisting, CRLF rejection, same-host redirect following only, marker reflection,
+  redirect-target analysis, DB error signature detection, and `Allow` enumeration.
+- **Proof-only payload engine** (`payloads/`, `payload` tool): 55 catalogue entries across 14
+  skills, JWT builders (`alg=none`, empty signature), request rendering for query/path/header/body
+  contexts, and a safety audit that refuses destructive templates before a request is built.
+- **`cve_correlate` tool**: the reasoning agent can now correlate its own observations against
+  the local corpus (no network access), returning typed findings plus corpus statistics.
+- **Native scan helpers** (`native_scan.py`): `resolve`, `ports` (TCP connect), `http` facts, and
+  `inventory` (nmap XML + HTTP banners → components), each gated by `--scope`.
+- **Bash toolkit** (`tools/bash/`): `cve_hunt.sh`, `payload_run.sh`, `scan_cycle.sh`, and
+  `lib/common.sh`. Every script refuses to run without `scope.json`, re-checks targets through the
+  Python scope engine, and writes timestamped JSON artifacts plus a Markdown summary.
+- **CLI surface**: `--intel-status`, `--import-feed`, `--feed-format`, `--intel-store`,
+  `--correlate`, `--min-cvss`, `--payload`, `--payload-param`, `--payload-ids`, `--http-probe`,
+  `--probe-method`, `--probe-body`, `--probe-marker`.
+- **Skill packs** now route the new tools: `exploit_availability` gains `cve_correlate`, the
+  injection/access-control packs gain `payload` and `http_probe`.
+
+### Changed
+
+- 29 typed tools (was 26); tool count, README badge, and repository layout updated.
+- `advisory` identifiers are validated by family (`CVE`, `GHSA`, `RHSA`, `USN`, `DSA`, `MSRC`,
+  `ZDI`, `CNVD`, `BDU`) with a strict numeric pattern for CVEs, so malformed feed rows are
+  rejected instead of stored.
+
+### Tests
+
+- 5 new test modules: intel (versioning, store, import, correlation), payloads (catalogue,
+  rendering, safety guard), native tools (live loopback HTTP server, port scan, nmap XML),
+  CLI intel surface, and the bash toolkit (subprocess, scope refusal, artifacts).
 ## [3.1.0] — Frictionless first run
 
 Nothing about the safety model changed; this release removes the setup friction that made a first
@@ -88,6 +139,7 @@ run take ten minutes instead of thirty seconds.
   CLI value of 80), which made the lab fail with a validation error.
 - Lab runs carry their `run_id` into the trace, so the trace, report, findings JSON and memory
   file all agree on one identifier.
+
 
 ## [3.0.0] — Depth, automation, and live host awareness
 
