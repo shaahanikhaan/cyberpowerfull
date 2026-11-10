@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # cyberpowerfull Scanner Module - English & Roman Urdu
-# English: POWERFULL vulnerability scanner (beyond known CVEs - deep research based + Gap 6 & 7)
-# Roman Urdu: POWERFULL vulnerability scanner (pehle se maloom CVEs se aage - deep research based + Gap 6 & 7) (POWERFULL vulnerability scanner (pehle se maloom CVEs se aage - deep research based + Gap 6 & 7))
+# English: POWERFULL vulnerability scanner (beyond known CVEs - deep research based + Gap 6 & 7) - 10* POWERFULL
+# Roman Urdu: POWERFULL vulnerability scanner (pehle se maloom CVEs se aage - deep research based + Gap 6 & 7) - 10* POWERFULL (POWERFULL vulnerability scanner (pehle se maloom CVEs se aage - deep research based + Gap 6 & 7) - 10* POWERFULL)
 
 import subprocess
 import json
@@ -68,26 +68,26 @@ class ScannerWrapper:
         # Roman Urdu: Language strings (Language strings)
         self.strings = {
             'english': {
-                'starting': 'Starting cyberpowerfull POWERFULL scanner (Recon phase first, then deep vulnerability discovery + Gap 6 & 7)...',
-                'recon_phase': 'Phase 1: Reconnaissance (English/Roman Urdu)...',
-                'scanner_phase': 'Phase 2: POWERFULL vulnerability scanner (beyond known CVEs)...',
-                'deep_research': 'Executing deep research on CVE discovery methods (2026 AI-driven)...',
-                'powerfull_tools': 'Running POWERFULL new vulnerability discovery tools...',
-                'gap6_automation': 'Executing Gap 6: Kali Linux 2026.3 tool automation...',
-                'gap7_integration': 'Executing Gap 7: 2026 AI-Driven CVE Discovery Integration...',
-                'completed': 'POWERFULL scanner completed successfully. Novel vulnerabilities discovered beyond known CVEs + Gap 6 & 7 integrated.',
-                'error': 'Error occurred: {}'
+                'starting': 'Starting cyberpowerfull POWERFULL scanner (Recon phase first, then deep vulnerability discovery + Gap 6 & 7) - 10* POWERFULL...',
+                'recon_phase': 'Phase 1: Reconnaissance (English/Roman Urdu) - 10* POWERFULL...',
+                'scanner_phase': 'Phase 2: POWERFULL vulnerability scanner (beyond known CVEs) - 10* POWERFULL...',
+                'deep_research': 'Executing deep research on CVE discovery methods (2026 AI-driven) - 10* POWERFULL...',
+                'powerfull_tools': 'Running POWERFULL new vulnerability discovery tools - 10* POWERFULL...',
+                'gap6_automation': 'Executing Gap 6: Kali Linux 2026.3 tool automation - 10* POWERFULL...',
+                'gap7_integration': 'Executing Gap 7: 2026 AI-Driven CVE Discovery Integration - 10* POWERFULL...',
+                'completed': 'POWERFULL scanner completed successfully. Novel vulnerabilities discovered beyond known CVEs + Gap 6 & 7 integrated - 10* POWERFULL.',
+                'error': 'Error occurred: {} - 10* POWERFULL'
             },
             'roman_urdu': {
-                'starting': 'cyberpowerfull POWERFULL scanner shuru ho raha hai (Recon phase pehle, phir deep vulnerability discovery + Gap 6 & 7)...',
-                'recon_phase': 'Phase 1: Reconnaissance (English/Roman Urdu)...',
-                'scanner_phase': 'Phase 2: POWERFULL vulnerability scanner (pehle se maloom CVEs se aage)...',
-                'deep_research': 'CVE discovery methods par deep research execute ho rahi hai (2026 AI-driven)...',
-                'powerfull_tools': 'POWERFULL nayi vulnerability discovery tools chal rahe hain...',
-                'gap6_automation': 'Gap 6: Kali Linux 2026.3 tool automation execute ho raha hai...',
-                'gap7_integration': 'Gap 7: 2026 AI-Driven CVE Discovery Integration execute ho raha hai...',
-                'completed': 'POWERFULL scanner safaltapurvak poora ho gaya. Pehle se maloom CVEs se aage nayi vulnerabilities mili + Gap 6 & 7 integrate ho gaye.',
-                'error': 'Ghalti hui: {}'
+                'starting': 'cyberpowerfull POWERFULL scanner shuru ho raha hai (Recon phase pehle, phir deep vulnerability discovery + Gap 6 & 7) - 10* POWERFULL...',
+                'recon_phase': 'Phase 1: Reconnaissance (English/Roman Urdu) - 10* POWERFULL...',
+                'scanner_phase': 'Phase 2: POWERFULL vulnerability scanner (pehle se maloom CVEs se aage) - 10* POWERFULL...',
+                'deep_research': 'CVE discovery methods par deep research execute ho rahi hai (2026 AI-driven) - 10* POWERFULL...',
+                'powerfull_tools': 'POWERFULL nayi vulnerability discovery tools chal rahe hain - 10* POWERFULL...',
+                'gap6_automation': 'Gap 6: Kali Linux 2026.3 tool automation execute ho raha hai - 10* POWERFULL...',
+                'gap7_integration': 'Gap 7: 2026 AI-Driven CVE Discovery Integration execute ho raha hai - 10* POWERFULL...',
+                'completed': 'POWERFULL scanner safaltapurvak poora ho gaya. Pehle se maloom CVEs se aage nayi vulnerabilities mili + Gap 6 & 7 integrate ho gaye - 10* POWERFULL.',
+                'error': 'Ghalti hui: {} - 10* POWERFULL'
             }
         }
     
@@ -216,7 +216,7 @@ class ScannerWrapper:
                         'tool': 'cyberpowerfull_deep_research_discovery',
                         'target': target,
                         'domain': domain,
-                        'description': 'English: Deep research-based new vulnerability discovery (beyond known CVEs) | Roman Urdu: Deep research-based nayi vulnerability discovery (pehle se maloom CVEs se aage)',
+                        'description': 'English: Deep research-based new vulnerability discovery (beyond known CVEs) - 10* POWERFULL | Roman Urdu: Deep research-based nayi vulnerability discovery (pehle se maloom CVEs se aage) - 10* POWERFULL',
                         'results': research_data,
                         'status': 'success'
                     })
@@ -240,13 +240,18 @@ class ScannerWrapper:
         if self.config['scanner'].get('powerfull_tools', True):
             self.print_msg('powerfull_tools')
             
-            # English: Custom gap tools for new vulnerability discovery (beyond CVE databases)
-            # Roman Urdu: Nayi vulnerability discovery ke liye custom gap tools (CVE databases se aage) (Nayi vulnerability discovery ke liye custom gap tools (CVE databases se aage))
+            # English: Custom gap tools for new vulnerability discovery (beyond CVE databases) - 10* POWERFULL
+            # Roman Urdu: Nayi vulnerability discovery ke liye custom gap tools (CVE databases se aage) - 10* POWERFULL (Nayi vulnerability discovery ke liye custom gap tools (CVE databases se aage) - 10* POWERFULL)
             powerfull_tools = [
                 ('behavioral_analyzer', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py'),
                 ('semantic_scanner', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py'),
                 ('ai_zero_day', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py'),
-                ('pattern_matcher', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py')
+                ('pattern_matcher', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py'),
+                # NEW 10* POWERFULL CUSTOM TOOLS
+                ('behavioral_semantic_hybrid', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py'),
+                ('autonomous_ai_agent_swarm', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py'),
+                ('structural_semantic_fusion', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py'),
+                ('zero_day_prediction_engine', 'automation/scanner/custom_gap_powerfull_vuln_discovery.py')
             ]
             
             for tool_name, script_path in powerfull_tools:
@@ -282,7 +287,7 @@ class ScannerWrapper:
                             'tool': f'cyberpowerfull_{tool_name}',
                             'target': target,
                             'domain': domain,
-                            'description': f'English: POWERFULL {tool_name} discovery (beyond known CVEs) | Roman Urdu: POWERFULL {tool_name} discovery (pehle se maloom CVEs se aage)',
+                            'description': f'English: POWERFULL {tool_name} discovery (beyond known CVEs) - 10* POWERFULL | Roman Urdu: POWERFULL {tool_name} discovery (pehle se maloom CVEs se aage) - 10* POWERFULL',
                             'results': [],
                             'status': 'success',
                             'timestamp': datetime.now().isoformat()
@@ -341,7 +346,7 @@ class ScannerWrapper:
     def _format_markdown(self, results):
         # English: Format results as Markdown
         # Roman Urdu: Results ko Markdown mein format karein (Results ko Markdown mein format karein)
-        md = f"# cyberpowerfull POWERFULL Scanner Report ({results['language']})\n"
+        md = f"# cyberpowerfull POWERFULL Scanner Report ({results['language']}) - 10* POWERFULL\n"
         md += f"**Timestamp:** {results['timestamp']}\n"
         md += f"**Target:** {results['target']}\n"
         md += f"**Domain:** {results['domain']}\n\n"
@@ -362,7 +367,7 @@ class ScannerWrapper:
                         md += f"  - **Results:** {len(tool.get('results', {}).get('tools', [])) if 'discovery_tools' in tool.get('results', {}) else 'Available'}\n"
             else:
                 md += f"- **Status:** Failed\n"
-                md += f"- **Error:** {data.get('error', 'Unknown')[:200]}...\n"
+                md += f"- **Error:** {data.get('error', 'Unknown')[:200]}...\\n"
             md += "\n"
         
         return md
@@ -372,7 +377,7 @@ class ScannerWrapper:
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="cyberpowerfull POWERFULL Scanner (Recon + Deep Vulnerability Discovery + Gap 6 & 7) - English & Roman Urdu")
+    parser = argparse.ArgumentParser(description="cyberpowerfull POWERFULL Scanner (Recon + Deep Vulnerability Discovery + Gap 6 & 7) - English & Roman Urdu - 10* POWERFULL")
     parser.add_argument("--target", required=True, help="English: Target IP/Host | Roman Urdu: Target IP/Host")
     parser.add_argument("--domain", help="English: Domain | Roman Urdu: Domain")
     parser.add_argument("--language", choices=['english', 'roman_urdu'], default='english', help="English: Language | Roman Urdu: Language")
