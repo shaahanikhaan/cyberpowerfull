@@ -7,6 +7,8 @@ no chat mode, no prompt box, and no interactive assistant.
 from __future__ import annotations
 
 import argparse
+import os
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from cyberpowerfull.brain.attack_tree import AttackTree
 from cyberpowerfull.brain.orchestrator import Orchestrator
 from cyberpowerfull.brain.prompt import PromptContext, build_system_prompt
 from cyberpowerfull.brain.tda import TaskDifficultyAssessor, TDAInput
+from cyberpowerfull.config import RunConfig
 from cyberpowerfull.errors import CyberpowerfullError, LLMError
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import new_id
@@ -39,14 +42,24 @@ examples:
   cyberpowerfull --list-tools
 
 exit codes:
-  0  run completed (any stop condition)
+  0  run completed without a failed or blocked action
   2  usage error
   3  scope.json missing, invalid, unauthorized, or expired
   4  target outside the authorized scope
   5  local inference unavailable
   6  tool argument or execution error surfaced to the operator
-  7  policy violation by the reasoning model
+  7  policy violation or blocked delegation by the reasoning model
 """
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,11 +69,14 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    defaults = RunConfig()
+    # Environment values are resolved after parsing so that --help/--version and
+    # explicit CLI overrides keep working even when an environment value is bad.
     parser.add_argument(
         "--scope",
-        default="scope.json",
+        default=None,
         metavar="PATH",
-        help="engagement scope file (required; the agent refuses to run without it)",
+        help="engagement scope file (default: $CYBERPOWERFULL_SCOPE or scope.json)",
     )
     parser.add_argument("--target", metavar="HOST", help="authorized target host or URL")
     parser.add_argument(
@@ -68,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="SPEC",
         help=f"local inference backend: ollama[:MODEL], llamacpp[:MODEL], replay:PATH "
-        f"(default: ollama:{DEFAULT_MODEL})",
+        f"(default: $CYBERPOWERFULL_LLM or ollama:{DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--replay", metavar="TRACE", help="replay a recorded trace instead of running the agent"
@@ -81,9 +97,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="build tool command lines but execute nothing (safe rehearsal)",
     )
-    parser.add_argument("--max-iterations", type=int, default=12, metavar="N")
-    parser.add_argument("--max-tokens", type=int, default=24_000, metavar="N")
-    parser.add_argument("--max-seconds", type=int, default=900, metavar="N")
+    parser.add_argument(
+        "--max-iterations",
+        type=_positive_int,
+        default=None,
+        metavar="N",
+        help=f"reasoning iteration budget (default: $CYBERPOWERFULL_MAX_ITERATIONS or "
+        f"{defaults.max_iterations})",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=_positive_int,
+        default=None,
+        metavar="N",
+        help=f"estimated token budget (default: $CYBERPOWERFULL_MAX_TOKENS or "
+        f"{defaults.max_tokens})",
+    )
+    parser.add_argument(
+        "--max-seconds",
+        type=_positive_int,
+        default=None,
+        metavar="N",
+        help=f"wall-clock budget in seconds (default: $CYBERPOWERFULL_MAX_SECONDS or "
+        f"{defaults.max_seconds})",
+    )
     parser.add_argument("--out", default="artifacts", metavar="DIR", help="report output directory")
     parser.add_argument(
         "--trace", default="traces/latest.json", metavar="PATH", help="where to write the run trace"
@@ -102,13 +139,53 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _env_positive_int(parser: argparse.ArgumentParser, name: str, fallback: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return fallback
+    try:
+        value = int(raw)
+    except ValueError:
+        parser.error(f"invalid environment configuration: {name} must be an integer, got {raw!r}")
+    if value < 1:
+        parser.error(
+            f"invalid environment configuration: {name} must be a positive integer, got {value}"
+        )
+    return value
+
+
+def _apply_environment(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Resolve unset flags from the environment, validating only values actually used."""
+    defaults = RunConfig()
+    if args.scope is None:
+        args.scope = os.environ.get("CYBERPOWERFULL_SCOPE", "scope.json")
+    if args.llm is None:
+        args.llm = os.environ.get("CYBERPOWERFULL_LLM") or (
+            f"{os.environ.get('CYBERPOWERFULL_LLM_BACKEND', 'ollama')}:"
+            f"{os.environ.get('CYBERPOWERFULL_MODEL', DEFAULT_MODEL)}"
+        )
+    if args.max_iterations is None:
+        args.max_iterations = _env_positive_int(
+            parser, "CYBERPOWERFULL_MAX_ITERATIONS", defaults.max_iterations
+        )
+    if args.max_tokens is None:
+        args.max_tokens = _env_positive_int(
+            parser, "CYBERPOWERFULL_MAX_TOKENS", defaults.max_tokens
+        )
+    if args.max_seconds is None:
+        args.max_seconds = _env_positive_int(
+            parser, "CYBERPOWERFULL_MAX_SECONDS", defaults.max_seconds
+        )
+
+
 def _progress(record: StepRecord) -> None:
     status = (record.result or {}).get("status", "-")
     level = record.tda.get("level", "-")
     print(
         f"[{record.index:02d}] {record.action:<16} {record.tool or '-':<12} "
         f"status={status:<8} findings={len(record.finding_ids)} "
-        f"difficulty={level:<8} node={record.node or '-'}"
+        f"difficulty={level:<8} node={record.node or '-'}",
+        file=sys.stderr,
     )
 
 
@@ -133,11 +210,11 @@ def _print_summary(trace, *, trace_path: Path | None, report_path: Path | None) 
 
 def _run(args: argparse.Namespace) -> int:
     from cyberpowerfull.brain.llm import build_client
-    from cyberpowerfull.config import RunConfig
 
     scope = load_scope(args.scope)
-    # scope.require raises ScopeViolation (exit 4) for anything outside the engagement.
-    target = scope.require(args.target or "")
+    # Preserve the operator's URL, path and port in the objective after checking the host.
+    scope.require(args.target or "")
+    target = (args.target or "").strip()
 
     cfg = RunConfig(
         scope_path=Path(args.scope),
@@ -164,11 +241,12 @@ def _run(args: argparse.Namespace) -> int:
             target=target,
             run_id=run_id,
         )
-        print(
-            f"starting run {run_id} against {target} "
-            f"(engagement={scope.engagement}, backend={client.backend}, model={client.model})",
-            file=sys.stderr,
-        )
+        if not args.quiet:
+            print(
+                f"starting run {run_id} against {target} "
+                f"(engagement={scope.engagement}, backend={client.backend}, model={client.model})",
+                file=sys.stderr,
+            )
         result = orchestrator.run(progress=None if args.quiet else _progress)
 
     trace = result.trace
@@ -178,6 +256,24 @@ def _run(args: argparse.Namespace) -> int:
         print(trace.model_dump_json(indent=2))
     else:
         _print_summary(trace, trace_path=trace_path, report_path=paths["report"])
+    return _run_exit_code(trace)
+
+
+def _run_exit_code(trace) -> int:
+    """Surface fatal and partial failures while retaining the trace and reports."""
+    if trace.stop_reason == "inference_failed":
+        return 5
+    if trace.stop_reason == "policy_violation":
+        return 7
+    if trace.stop_reason == "prompt_render_failed":
+        return 1
+    statuses = {(step.result or {}).get("status") for step in trace.steps}
+    if "blocked" in statuses:
+        return 7
+    if statuses & {"error", "missing", "timeout"} or any(
+        step.action == "delegate" and step.error for step in trace.steps
+    ):
+        return 6
     return 0
 
 
@@ -207,11 +303,23 @@ def _check(args: argparse.Namespace) -> int:
         scope.require(args.target)
         print(f"target: in scope ({args.target})")
     print(f"allowed phases: {', '.join(phase.value for phase in scope.allowed_phases)}")
+    print(
+        f"passive third-party sources: {'enabled' if scope.allow_passive_sources else 'disabled'}"
+    )
+    print(
+        f"allowed wordlists: {len(scope.allowed_wordlists)}; "
+        f"allowed nuclei template files: {len(scope.allowed_nuclei_templates)}"
+    )
 
     missing: list[str] = []
     for tool in catalog():
         if tool["installed"]:
-            print(f"tool: {tool['name']:<12} ready ({tool['binary']})")
+            label = (
+                "ready (native)"
+                if tool["binary"] == "native"
+                else "found on PATH (not version-checked)"
+            )
+            print(f"tool: {tool['name']:<12} {label} ({tool['binary']})")
         else:
             missing.append(tool["name"])
             print(f"tool: {tool['name']:<12} MISSING binary ({tool['binary']})")
@@ -229,7 +337,8 @@ def _check(args: argparse.Namespace) -> int:
 
 def _render_prompt(args: argparse.Namespace) -> int:
     scope = load_scope(args.scope)
-    target = scope.require(args.target or "")
+    scope.require(args.target or "")
+    target = (args.target or "").strip()
     model = (args.llm or "").partition(":")[2] or DEFAULT_MODEL
     with MemoryStore(":memory:", run_id="prompt-preview") as memory:
         tree = AttackTree(target=target)
@@ -286,6 +395,7 @@ def _list_skills() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    _apply_environment(parser, args)
     try:
         if args.list_tools:
             return _list_tools()
@@ -306,6 +416,9 @@ def main(argv: list[str] | None = None) -> int:
     except CyberpowerfullError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return exc.exit_code
+    except (OSError, sqlite3.Error) as exc:
+        print(f"error: local storage operation failed: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -1,13 +1,31 @@
 {
   "engagement": "example-engagement-name",
-  "authorized": true,
-  "authorization_ref": "SOW-2026-014 / signed 2026-11-01",
-  "targets": ["app.example.test", "api.example.test", "192.0.2.10"],
-  "domains": ["example.test", "*.staging.example.test"],
-  "exclude": ["billing.example.test", "10.0.0.0/8", "169.254.0.0/16"],
-  "allowed_phases": ["recon", "scanning", "validation"],
+  "authorized": false,
+  "authorization_ref": "replace-with-written-authorization-reference",
+  "targets": [
+    "app.example.test",
+    "api.example.test",
+    "192.0.2.10"
+  ],
+  "domains": [
+    "example.test",
+    "*.staging.example.test"
+  ],
+  "exclude": [
+    "billing.example.test",
+    "10.0.0.0/8",
+    "169.254.0.0/16"
+  ],
+  "allowed_phases": [
+    "recon",
+    "scanning",
+    "validation"
+  ],
   "max_rps": 5,
   "expires": "2027-01-31",
   "contact": "security@example.test",
-  "notes": "Copy this file to scope.json. Only list assets you are contractually authorized to test."
+  "notes": "Copy this file to scope.json. Complete the agreement details and mark authorized true only after obtaining permission.",
+  "allow_passive_sources": false,
+  "allowed_wordlists": [],
+  "allowed_nuclei_templates": []
 }

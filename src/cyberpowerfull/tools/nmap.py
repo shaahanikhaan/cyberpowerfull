@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import Field, field_validator
 
 from cyberpowerfull.models import Finding, Phase, Severity
-from cyberpowerfull.tools.base import BaseTool, HostInput, truncate
+from cyberpowerfull.tools.base import BaseTool, HostInput, host_port, truncate
 
 _PORT_SPEC = re.compile(r"^(top-\d{1,5}|[0-9][0-9,\-]{0,255})$")
 
@@ -44,6 +44,15 @@ class NmapArgs(HostInput):
     def _check_ports(cls, value: str) -> str:
         if not _PORT_SPEC.match(value):
             raise ValueError("ports must be 'top-N' or a comma/dash separated port list")
+        return value
+
+    @field_validator("default_scripts")
+    @classmethod
+    def _check_default_scripts(cls, value: bool) -> bool:
+        if value:
+            raise ValueError(
+                "default NSE scripts are not allowlisted; choose safe scripts explicitly"
+            )
         return value
 
     @field_validator("scripts")
@@ -99,8 +108,9 @@ class NmapTool(BaseTool):
             service_name = service.get("name", "unknown") if service is not None else "unknown"
             product = service.get("product") if service is not None else None
             version = service.get("version") if service is not None else None
-            endpoint = f"{args.target}:{port_id}"
-            evidence = f"nmap -sV state=open port={port_id}/{protocol} service={service_name}"
+            endpoint = host_port(args.target, port_id)
+            scan_type = "nmap -sV" if args.service_detection else "nmap"
+            evidence = f"{scan_type} state=open port={port_id}/{protocol} service={service_name}"
             findings.append(
                 self.finding(
                     title=f"Open TCP port {port_id}/{protocol} ({service_name})",

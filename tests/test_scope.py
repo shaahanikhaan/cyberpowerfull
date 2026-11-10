@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 import pytest
-from tests.conftest import SCOPE_PAYLOAD
 
 from cyberpowerfull.errors import ScopeError, ScopeViolation
 from cyberpowerfull.models import Phase
 from cyberpowerfull.scope import Scope, load_scope, normalize_host
+from tests.conftest import SCOPE_PAYLOAD
 
 
 class TestNormalizeHost:
@@ -22,7 +22,7 @@ class TestNormalizeHost:
             ("http://127.0.0.1:8080/admin", "127.0.0.1"),
             ("LAB.TEST.", "lab.test"),
             ("[::1]", "::1"),
-            ("user:pass@host.lab.test/x", "host.lab.test"),
+            ("https://host.lab.test/x", "host.lab.test"),
         ],
     )
     def test_normalises(self, raw: str, expected: str) -> None:

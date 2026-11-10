@@ -48,6 +48,7 @@ class HttpxTool(BaseTool):
             "-json",
             "-silent",
             "-no-color",
+            "-disable-update-check",
             "-sc",
             "-title",
             "-t",
@@ -56,7 +57,7 @@ class HttpxTool(BaseTool):
         if args.tech_detect:
             argv.append("-td")
         if args.follow_redirects:
-            argv.append("-follow-redirects")
+            argv.append("-follow-host-redirects")
         if args.ports:
             argv.extend(["-ports", ",".join(str(p) for p in args.ports)])
         return argv
@@ -96,7 +97,7 @@ class HttpxTool(BaseTool):
                 findings.append(
                     self.finding(
                         title=f"Access-controlled endpoint reachable (HTTP {status})",
-                        severity=Severity.LOW,
+                        severity=Severity.INFO,
                         confidence=0.6,
                         target=args.target,
                         endpoint=url,

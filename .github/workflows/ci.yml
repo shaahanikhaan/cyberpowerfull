@@ -44,6 +44,27 @@ jobs:
       - name: pytest --cov
         run: pytest --cov=cyberpowerfull --cov-report=term-missing --cov-fail-under=70
 
+  packaging:
+    name: clean wheel install and bundled templates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build and install wheel outside the checkout
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+          python -m venv /tmp/cyberpowerfull-wheel
+          /tmp/cyberpowerfull-wheel/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/cyberpowerfull-wheel/bin/cyberpowerfull --list-skills
+          /tmp/cyberpowerfull-wheel/bin/cyberpowerfull --render-prompt \
+            --scope "$GITHUB_WORKSPACE/scope.json" --target 127.0.0.1 > /tmp/prompt.txt
+          grep -q "root_agent_directive" /tmp/prompt.txt
+          grep -q "Skill: SQL Injection" /tmp/prompt.txt
+
   smoke:
     name: end-to-end smoke (mock target, replay decisions)
     runs-on: ubuntu-latest
@@ -100,6 +121,20 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 3 || (echo "expected exit code 3, got $code" && exit 1)
+
+      - name: Check machine-readable dry-run output
+        run: |
+          python -m cyberpowerfull --scope scope.json --target 127.0.0.1 \
+            --llm replay:examples/decisions.json --dry-run --json \
+            --out artifacts --trace traces/dry-run.json --memory artifacts/memory.sqlite3 \
+            > artifacts/dry-run-output.json
+          python - <<'PYCODE'
+          import json
+          with open("artifacts/dry-run-output.json") as stream:
+              data = json.load(stream)
+          assert data["steps"][0]["result"]["status"] == "skipped"
+          assert data["findings"] == []
+          PYCODE
 
       - name: Replay the trace
         run: python -m cyberpowerfull.cli --replay traces/latest.json --out artifacts

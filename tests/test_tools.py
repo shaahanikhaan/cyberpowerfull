@@ -8,17 +8,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from tests.conftest import (
-    DALFOX_JSON,
-    FFUF_JSON,
-    HTTPX_JSONL,
-    NIKTO_STDOUT,
-    NMAP_XML,
-    NUCLEI_JSONL,
-    SQLMAP_STDOUT,
-    SUBFINDER_STDOUT,
-    completed,
-)
 
 from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.errors import InvalidToolArguments
@@ -34,17 +23,29 @@ from cyberpowerfull.tools.registry import catalog, get_tool, installed_tools, to
 from cyberpowerfull.tools.sqlmap import SqlmapTool
 from cyberpowerfull.tools.subfinder import SubfinderTool
 from cyberpowerfull.tools.tcp_probe import TcpProbeTool
+from tests.conftest import (
+    DALFOX_JSON,
+    FFUF_JSON,
+    HTTPX_JSONL,
+    NIKTO_STDOUT,
+    NMAP_XML,
+    NUCLEI_JSONL,
+    SQLMAP_STDOUT,
+    SUBFINDER_STDOUT,
+    completed,
+)
 
 
 def patch_subprocess(stdout: str = "", stderr: str = "", returncode: int = 0, side_effect=None):
-    """Patch subprocess.run and shutil.which for a tool invocation."""
-    if side_effect is None:
-        run_mock = mock.patch(
-            "cyberpowerfull.tools.base.subprocess.run",
-            return_value=completed(stdout, stderr, returncode),
-        )
-    else:
-        run_mock = mock.patch("cyberpowerfull.tools.base.subprocess.run", side_effect=side_effect)
+    """Patch subprocess.run and populate the bounded-output temp files."""
+
+    def execute(argv, **kwargs):
+        proc = side_effect(argv, **kwargs) if side_effect else completed(stdout, stderr, returncode)
+        kwargs["stdout"].write((proc.stdout or "").encode("utf-8"))
+        kwargs["stderr"].write((proc.stderr or "").encode("utf-8"))
+        return proc
+
+    run_mock = mock.patch("cyberpowerfull.tools.base.subprocess.run", side_effect=execute)
     which_mock = mock.patch(
         "cyberpowerfull.tools.base.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"
     )
@@ -106,7 +107,7 @@ class TestNmapTool:
         assert result.status is ToolStatus.OK
         assert len(result.findings) == 3
         assert run.call_args.kwargs["shell"] is not True
-        assert run.call_args.kwargs["capture_output"] is True
+        assert "stdout" in run.call_args.kwargs and "stderr" in run.call_args.kwargs
         assert result.duration_ms >= 0
 
     def test_observations_include_nse(self) -> None:
@@ -170,7 +171,7 @@ class TestNucleiTool:
         assert finding.cwe == "CWE-22"
         assert finding.cve == "CVE-2021-41773"
         assert finding.cvss == 7.5
-        assert finding.verified is True
+        assert finding.verified is False  # template matches still need human validation
 
     def test_run_mocked(self) -> None:
         run_mock, which_mock = patch_subprocess(stdout=NUCLEI_JSONL)
@@ -204,7 +205,7 @@ class TestFfufTool:
         )
         findings = tool.parse(args, FFUF_JSON)
         assert len(findings) == 3
-        assert findings[1].severity is Severity.LOW  # 403
+        assert findings[1].severity is Severity.INFO  # 403 alone is not a vulnerability
         assert findings[0].endpoint == "http://127.0.0.1/admin"
 
     def test_run_writes_to_output_file(self, tmp_path: Path) -> None:
@@ -218,8 +219,8 @@ class TestFfufTool:
         run_mock, which_mock = patch_subprocess(side_effect=fake_run)
         with run_mock, which_mock:
             result = FfufTool().run({"target": "http://127.0.0.1/FUZZ", "wordlist": str(wordlist)})
-        assert result.status is ToolStatus.OK  # exit code 1 is "no match" for ffuf
-        assert len(result.findings) == 3
+        assert result.status is ToolStatus.ERROR  # ffuf exit code 1 signals an error
+        assert len(result.findings) == 3  # retain any partial evidence
         assert any("structured output file" in note for note in result.observations)
 
 
@@ -379,8 +380,9 @@ class TestTcpProbeTool:
             tool.validate({"target": "127.0.0.1", "ports": [6379]}),
             json.dumps({"open": [6379], "errors": {}}),
         )
-        assert findings[0].severity is Severity.LOW
+        assert findings[0].severity is Severity.INFO
         assert "redis" in findings[0].title
+        assert "not a confirmed service" in findings[0].evidence
 
 
 class TestBaseToolBehaviour:

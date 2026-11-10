@@ -39,7 +39,7 @@ class SubfinderTool(BaseTool):
     input_model = SubfinderArgs
 
     def build_argv(self, args: SubfinderArgs, out_file: str | None = None) -> list[str]:
-        argv = ["subfinder", "-d", args.target, "-silent"]
+        argv = ["subfinder", "-d", args.target, "-silent", "-disable-update-check"]
         if args.all_sources:
             argv.append("-all")
         if args.recursive:
@@ -53,7 +53,7 @@ class SubfinderTool(BaseTool):
             host = line.strip().lower()
             if not host or host in seen or not _HOSTNAME.match(host):
                 continue
-            if not host.endswith(args.target):
+            if host != args.target and not host.endswith("." + args.target):
                 continue
             seen.add(host)
             findings.append(

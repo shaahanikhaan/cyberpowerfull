@@ -2,17 +2,37 @@
 
 from __future__ import annotations
 
+import html
 import json
+import re
 from pathlib import Path
 
 from cyberpowerfull.models import Severity
+from cyberpowerfull.storage import write_private_text
 from cyberpowerfull.trace import Trace, summarize_trace
+
+
+def _text(value: object) -> str:
+    """Escape untrusted scanner/model text before placing it in Markdown."""
+    plain = str(value).replace("\r", " ").replace("\n", " ")
+    return html.escape(plain, quote=False)
+
+
+def _markdown_text(value: object) -> str:
+    return re.sub(r"([\\`*_{}\[\]()!#|])", r"\\\1", _text(value))
+
+
+def _inline(value: object) -> str:
+    text = _text(value)
+    runs = re.findall(r"`+", text)
+    delimiter = "`" * (max((len(run) for run in runs), default=0) + 1)
+    return f"{delimiter} {text} {delimiter}"
 
 
 def _table(headers: list[str], rows: list[list[str]]) -> str:
     lines = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
     for row in rows:
-        escaped = [str(cell).replace("|", "\\|").replace("\n", " ") for cell in row]
+        escaped = [_markdown_text(cell) for cell in row]
         lines.append("| " + " | ".join(escaped) + " |")
     return "\n".join(lines)
 
@@ -24,15 +44,15 @@ def render_markdown(trace: Trace) -> str:
     lines: list[str] = [
         "# Penetration Test Report",
         "",
-        f"- engagement: `{trace.engagement}`",
-        f"- target: `{trace.target}`",
-        f"- run_id: `{trace.run_id}`",
-        f"- agent: {trace.agent} {trace.agent_version} "
-        f"(backend: {trace.backend}, model: {trace.model})",
-        f"- started: {trace.started_at}",
-        f"- finished: {trace.finished_at or 'incomplete'}",
-        f"- stop_reason: `{trace.stop_reason}`",
-        f"- scope_fingerprint: `{trace.scope_fingerprint[:16]}`",
+        f"- engagement: {_inline(trace.engagement)}",
+        f"- target: {_inline(trace.target)}",
+        f"- run_id: {_inline(trace.run_id)}",
+        f"- agent: {_markdown_text(trace.agent)} {_markdown_text(trace.agent_version)} "
+        f"(backend: {_markdown_text(trace.backend)}, model: {_markdown_text(trace.model)})",
+        f"- started: {_markdown_text(trace.started_at)}",
+        f"- finished: {_markdown_text(trace.finished_at or 'incomplete')}",
+        f"- stop_reason: {_inline(trace.stop_reason)}",
+        f"- scope_fingerprint: {_inline(trace.scope_fingerprint[:16])}",
         "",
         "## Summary",
         "",
@@ -78,16 +98,18 @@ def render_markdown(trace: Trace) -> str:
             lines.extend(
                 [
                     "",
-                    f"#### {index}. [{finding.severity.value.upper()}] {finding.title}",
+                    f"#### {index}. [{finding.severity.value.upper()}] "
+                    f"{_markdown_text(finding.title)}",
                     "",
-                    f"- target: `{finding.target}`",
-                    f"- endpoint: `{finding.endpoint or 'n/a'}`",
-                    f"- tool: `{finding.tool}` skill: `{finding.skill or 'n/a'}`",
+                    f"- target: {_inline(finding.target)}",
+                    f"- endpoint: {_inline(finding.endpoint or 'n/a')}",
+                    f"- tool: {_inline(finding.tool)} skill: {_inline(finding.skill or 'n/a')}",
                     f"- confidence: {finding.confidence:.2f} verified: {finding.verified}",
-                    f"- cwe: {finding.cwe or 'n/a'} cve: {finding.cve or 'n/a'} "
+                    f"- cwe: {_markdown_text(finding.cwe or 'n/a')} "
+                    f"cve: {_markdown_text(finding.cve or 'n/a')} "
                     f"cvss: {finding.cvss if finding.cvss is not None else 'n/a'}",
-                    f"- evidence: `{finding.evidence or 'none recorded'}`",
-                    f"- remediation: {finding.remediation or 'not specified'}",
+                    f"- evidence: {_inline(finding.evidence or 'none recorded')}",
+                    f"- remediation: {_markdown_text(finding.remediation or 'not specified')}",
                 ]
             )
 
@@ -124,17 +146,19 @@ def render_markdown(trace: Trace) -> str:
     else:
         lines.append("No steps were executed.")
 
-    if trace.stop_reason in {"inference_failed", "policy_violation"} and trace.error:
-        lines.extend(["", "## Run error", "", f"`{trace.error}`"])
+    if trace.error:
+        lines.extend(["", "## Run error", "", _inline(trace.error)])
 
     lines.extend(
         [
             "",
             "## Methodology",
             "",
-            "Recon precedes scanning, scanning precedes validation. Findings are derived only "
-            "from recorded tool output stored in append-only memory; hypotheses remain in the "
-            "attack tree until confirmed. All inference ran on a local open-weight model.",
+            "The planner is guided to start with recon, then scanning and validation; actual "
+            "steps are recorded above. Findings are derived from recorded tool output stored in "
+            "append-only memory; hypotheses remain in the "
+            "attack tree until confirmed. The recorded backend may be a local model or "
+            "a replay stream; review each finding manually.",
             "",
         ]
     )
@@ -144,11 +168,12 @@ def render_markdown(trace: Trace) -> str:
 def write_reports(trace: Trace, out_dir: str | Path) -> dict[str, Path]:
     """Write Markdown report and machine-readable findings for one run."""
     directory = Path(out_dir)
-    directory.mkdir(parents=True, exist_ok=True)
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     report_path = directory / f"report-{trace.run_id}.md"
     findings_path = directory / f"findings-{trace.run_id}.json"
-    report_path.write_text(render_markdown(trace), encoding="utf-8")
-    findings_path.write_text(
+    write_private_text(report_path, render_markdown(trace))
+    write_private_text(
+        findings_path,
         json.dumps(
             {
                 "run_id": trace.run_id,
@@ -163,7 +188,6 @@ def write_reports(trace: Trace, out_dir: str | Path) -> dict[str, Path]:
             indent=2,
             default=str,
         ),
-        encoding="utf-8",
     )
     return {"report": report_path, "findings": findings_path}
 

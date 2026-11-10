@@ -86,20 +86,15 @@ class TestReadme:
     def test_safety_section_is_above_architecture(self) -> None:
         assert README.index("## Safety & Scope") < README.index("## Architecture")
 
-    def test_quick_start_has_exactly_three_commands(self) -> None:
+    def test_quick_start_is_a_runnable_loopback_lab(self) -> None:
         start = README.index("## Quick Start")
-        block_start = README.index("```bash", start)
-        block_end = README.index("```", block_start + 7)
-        commands = [
-            line.strip()
-            for line in README[block_start + 7 : block_end].strip().splitlines()
-            if line.strip()
-        ]
-        assert commands == [
-            "pip install -e .",
-            "python -m cyberpowerfull.cli --scope scope.json --target example.com",
-            "python -m cyberpowerfull.cli --replay traces/latest.json",
-        ]
+        end = README.index("### Use a local model", start)
+        quickstart = README[start:end]
+        assert "python -m pip install -e ." in quickstart
+        assert "python -m http.server 8000 --bind 127.0.0.1" in quickstart
+        assert "--target 127.0.0.1 --llm replay:examples/decisions.json" in quickstart
+        assert "cyberpowerfull --replay traces/latest.json" in quickstart
+        assert "--target example.com" not in quickstart
 
     def test_badges(self) -> None:
         assert "badge.svg" in README
@@ -126,7 +121,7 @@ class TestReadme:
         assert "tested" in table
 
     def test_no_empty_marketing_sections(self) -> None:
-        assert "POWERFULL" not in README
+        assert "**POWERFULL**" not in README
 
 
 class TestRepositoryFiles:
@@ -143,14 +138,15 @@ class TestRepositoryFiles:
 
     def test_changelog_has_hard_fork_entry(self) -> None:
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [Unreleased] — Pentest-Only Hard Fork" in changelog
+        assert "Pentest-Only Hard Fork" in changelog
+        assert "Readiness and Safety Hardening" in changelog
         for section in ("### Added", "### Changed", "### Removed"):
             assert section in changelog
 
     def test_scope_files_are_valid_json(self) -> None:
         for name in ("scope.json", "scope.example.json"):
             payload = json.loads((ROOT / name).read_text(encoding="utf-8"))
-            assert payload["authorized"] is True
+            assert payload["authorized"] is (name == "scope.json")
             assert payload["targets"]
 
     def test_example_replay_stream_matches_decision_contract(self) -> None:

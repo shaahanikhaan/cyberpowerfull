@@ -1,61 +1,39 @@
 # Security Policy
 
-## Intended use
+## Intended use and safety boundaries
 
-`cyberpowerfull` is a penetration-testing agent. It is built for authorized engagements only:
-systems you own, or systems for which you hold written authorization from the asset owner.
+`cyberpowerfull` is intended only for assets you own or are explicitly authorized to assess.
+Supply an accurate, current `scope.json` and agree on methods, allowable traffic, and incident
+contacts with the asset owner before running it. The bundled scope is for a loopback lab only.
 
-The agent is designed to make unauthorized use hard, not to make it look acceptable:
+The CLI rejects missing/unauthorized/expired scope, checks primary delegated targets and phases,
+restricts model endpoints to loopback, and prevents model-server redirects and proxy use. Passive
+third-party sources require an explicit scope opt-in; model-selected wordlists and Nuclei templates
+must be operator-allowlisted files. Those controls reduce mistakes; **they are not a sandbox**.
 
-- It refuses to start without a `scope.json` declaring `"authorized": true` and explicit targets
-  (exit code `3`).
-- Every tool call is re-validated against that scope inside the worker layer; out-of-scope
-  targets are blocked and recorded (exit code `4`).
-- The scope is injected into the system prompt by the system, together with a SHA-256
-  fingerprint recorded in every trace, so a run can be attributed to a declared engagement.
-- Out-of-band interaction is disabled (`nuclei -no-interactsh`), cloud inference endpoints are
-  rejected, and tool subprocesses run with cloud credentials removed from the environment.
-- Exploitation is proof-only: no persistence, no lateral movement, no data extraction, no
-  denial-of-service behaviour.
-
-Do not remove these controls in a fork and redistribute the result as this project.
+Third-party scanner binaries, DNS, redirects, templates, subprocesses, local configuration, and
+model/target output are not fully controlled by this application. Scanner tests may change data or
+contact destinations other than the declared target. Enforce egress allowlists and rate limits at
+the network boundary, use isolated test accounts, review tools and templates, and supervise runs.
+See [the readiness audit](docs/readiness-audit.md) for precise limitations.
 
 ## Reporting a vulnerability in this software
 
-If you find a security defect in `cyberpowerfull` itself (for example: a scope-bypass in the
-worker layer, command injection through a tool argument, an unsafe deserialization path, or an
-escape from the loopback-only inference policy):
-
-1. Do **not** open a public issue.
-2. Use GitHub's private vulnerability reporting on this repository
-   (Security → Advisories → "Report a vulnerability"), or contact the maintainers through the
-   address listed in `pyproject.toml`/repository profile.
-3. Include: affected version or commit, a minimal reproduction, impact, and any suggested fix.
-
-Expect an acknowledgement within 7 days and a remediation plan within 30 days. Please allow a
-coordinated disclosure window before publishing details.
+If you find a security defect in the package itself, do not open a public issue. Use GitHub's
+private vulnerability reporting for this repository (Security → Advisories → “Report a vulnerability”) or contact the repository maintainers through their GitHub profile. Include the
+affected version or commit, minimal reproduction, impact, and suggested remediation if known.
 
 ## Scope of this policy
 
-In scope:
+In scope: the Python package, CLI contract, scope and local-inference guardrails, and
+run-isolation guarantees. Report vulnerabilities in third-party tools to their own maintainers.
+Claims requiring modification of the declared authorization or a malicious locally installed
+binary do not demonstrate a standalone authorization boundary.
 
-- the Python package in `src/cyberpowerfull/`
-- the CLI contract and its exit codes
-- the scope-enforcement and memory-integrity guarantees
+## Engagement data
 
-Out of scope:
-
-- vulnerabilities in third-party tools invoked by this project (nmap, nuclei, sqlmap, …) —
-  report those upstream
-- findings produced by the agent against your own targets
-- issues that require weakening a documented safety control (for example: editing
-  `scope.json` to add targets you do not own, or exporting an environment variable that points
-  inference at a cloud host)
-
-## Handling of engagement data
-
-- Traces, reports, and memory stay on the local filesystem under `traces/` and `artifacts/`.
-- No telemetry is collected, and no data leaves the machine except the requests the operator's
-  authorized tools make against authorized targets.
-- Treat `artifacts/` and `traces/` as engagement-confidential and delete them when the
-  engagement ends.
+Traces, reports, and SQLite memory can contain sensitive request arguments, cookies, model output,
+and evidence. New files are created with owner-only permissions on POSIX, but existing directories
+retain their permissions and data is not encrypted. Scanner processes can still access local files
+and may contact third-party services when configured or explicitly opted in. Use encryption,
+restricted access, retention limits, and secure deletion appropriate to the engagement.
