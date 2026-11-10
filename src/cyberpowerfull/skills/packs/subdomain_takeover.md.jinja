@@ -1,0 +1,19 @@
+{# Skill pack: subdomain_takeover #}
+## Skill: Subdomain Takeover
+applies_when: Use when in-scope DNS records point at unclaimed third-party services.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - dangling CNAME records to object storage, CDN, or PaaS providers
+  - provider-specific error pages such as "NoSuchBucket" or "repository not found"
+probe_order:
+  1. Enumerate subdomains with subfinder (passive only)
+  2. Resolve each host and identify provider fingerprints
+  3. Confirm that the provider reports the resource as unclaimed
+validation_criteria:
+  - the provider indicates the resource is available for registration, and scope authorises the host
+evidence_required:
+  - DNS record, provider response body, and the host name
+constraints:
+  - do not register resources; report only

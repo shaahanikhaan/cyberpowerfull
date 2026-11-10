@@ -1,0 +1,22 @@
+{# Skill pack: authentication_jwt #}
+## Skill: Authentication & JWT
+applies_when: Use when the target exposes a login, token endpoint, or bearer-token API.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - JWT in Authorization header, cookie, or query string
+  - alg header accepts "none", HS256 with a guessable secret, or key confusion (RS256 -> HS256)
+  - tokens without exp, aud, or iss claims; long-lived refresh tokens
+probe_order:
+  1. Confirm the login and refresh endpoints with httpx
+  2. Capture one valid token and decode header/payload (no third-party service)
+  3. Test claim tampering: sub, role, tenant, exp
+  4. Test signature handling: alg none, empty signature, weak HS256 secret from a local wordlist
+validation_criteria:
+  - server accepts a token whose signature was not produced by the target
+  - server accepts a token with an escalated role or another tenant identifier
+evidence_required:
+  - the modified token, the request, the response status and protected body
+stop_criteria:
+  - two consecutive rejected attempts on the same technique (record as negative evidence)

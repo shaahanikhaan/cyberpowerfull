@@ -1,0 +1,19 @@
+{# Skill pack: sql_injection #}
+## Skill: SQL Injection
+applies_when: Use when parameters influence database queries or error text.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - database error strings, stack traces, boolean-sensitive responses
+  - numeric parameters, sort/order parameters, search endpoints
+probe_order:
+  1. Send a single quote and compare baseline vs error response
+  2. Send boolean pairs (true/false predicate) and diff response length
+  3. Escalate to sqlmap confirmation with level 2, risk 1, technique BEUSTQ
+validation_criteria:
+  - deterministic boolean differential, or sqlmap reports an injectable parameter
+evidence_required:
+  - parameter name, injection technique, and the response diff
+constraints:
+  - confirmation only: no data extraction, no stacked queries, no file read/write

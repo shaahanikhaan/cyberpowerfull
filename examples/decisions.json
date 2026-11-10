@@ -1,0 +1,64 @@
+{
+  "_comment": "Replay decision stream used by the CI smoke test and the README. It drives the agent against a local mock TCP service (python -m http.server 8000) with no model running. The format matches the model's decision contract: {step, tool, args, reason}.",
+  "decisions": [
+    {
+      "tool": "delegate",
+      "reason": "recon first: confirm which ports of the authorized loopback host are reachable before any deeper test",
+      "args": {
+        "agent": "recon",
+        "tool": "tcp_probe",
+        "args": {
+          "target": "127.0.0.1",
+          "ports": [22, 80, 443, 8000, 8080],
+          "timeout_s": 1.0
+        },
+        "expand": [
+          {
+            "hypothesis": "Fingerprint the HTTP service exposed on the reachable port",
+            "skill": "information_disclosure",
+            "phase": "scanning",
+            "prior": 0.7
+          },
+          {
+            "hypothesis": "Validate the discovered HTTP surface for template-matched issues",
+            "skill": "information_disclosure",
+            "phase": "validation",
+            "prior": 0.5
+          }
+        ]
+      }
+    },
+    {
+      "tool": "delegate",
+      "reason": "the reachable port belongs to a web service; probe it for status, title, and technology fingerprint",
+      "args": {
+        "agent": "scan",
+        "tool": "httpx",
+        "args": {
+          "target": "http://127.0.0.1:8000",
+          "tech_detect": true,
+          "follow_redirects": true
+        }
+      }
+    },
+    {
+      "tool": "delegate",
+      "reason": "no confirmed high-severity evidence yet and difficulty is still moderate; validate with templates but keep the request rate low",
+      "args": {
+        "agent": "validate",
+        "tool": "nuclei",
+        "args": {
+          "target": "http://127.0.0.1:8000",
+          "severity": ["low", "medium", "high", "critical"],
+          "rate_limit": 5,
+          "concurrency": 2
+        }
+      }
+    },
+    {
+      "tool": "terminate",
+      "reason": "attack tree has no node above the expansion threshold and the remaining branches are low value; report the collected evidence",
+      "done": true
+    }
+  ]
+}

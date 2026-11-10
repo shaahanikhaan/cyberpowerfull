@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "arena/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: lint + tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: black --check
+        run: black --check .
+
+      - name: pytest --cov
+        run: pytest --cov=cyberpowerfull --cov-report=term-missing --cov-fail-under=70
+
+  smoke:
+    name: end-to-end smoke (mock target, replay decisions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run the agent against a mock target (no model required)
+        run: |
+          python -m http.server 8000 --bind 127.0.0.1 > /tmp/httpd.log 2>&1 &
+          for i in $(seq 1 20); do
+            (echo > /dev/tcp/127.0.0.1/8000) >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          python -m cyberpowerfull.cli \
+            --scope scope.json \
+            --target 127.0.0.1 \
+            --llm replay:examples/decisions.json \
+            --out artifacts \
+            --trace traces/latest.json \
+            --memory artifacts/memory.sqlite3 \
+            --quiet
+
+      - name: Assert the trace is structured and contains evidence
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          trace = json.loads(pathlib.Path("traces/latest.json").read_text())
+          assert trace["schema_version"] == "1.0", trace["schema_version"]
+          assert trace["steps"], "trace has no steps"
+          assert trace["steps"][0]["tool"] == "tcp_probe"
+          assert trace["steps"][0]["result"]["status"] == "ok"
+          assert trace["findings"], "trace has no findings"
+          assert any("8000" in json.dumps(f) for f in trace["findings"]), "port 8000 not evidenced"
+          assert trace["scope_fingerprint"], "scope fingerprint missing"
+          assert list(pathlib.Path("artifacts").glob("report-*.md")), "markdown report missing"
+          print("smoke ok:", trace["stop_reason"], len(trace["findings"]), "finding(s)")
+          PY
+
+      - name: Refuse to run without scope
+        run: |
+          set +e
+          python -m cyberpowerfull.cli --scope missing.json --target 127.0.0.1 --quiet
+          code=$?
+          set -e
+          test "$code" -eq 3 || (echo "expected exit code 3, got $code" && exit 1)
+
+      - name: Replay the trace
+        run: python -m cyberpowerfull.cli --replay traces/latest.json --out artifacts
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-artifacts
+          path: |
+            traces/
+            artifacts/
+          if-no-files-found: warn

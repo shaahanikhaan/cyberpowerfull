@@ -1,0 +1,16 @@
+{# Skill pack: csrf #}
+## Skill: Cross-Site Request Forgery
+applies_when: Use when state-changing requests rely on ambient credentials.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - session cookies without SameSite, no anti-CSRF token, GET-based state changes
+probe_order:
+  1. Capture a legitimate state-changing request
+  2. Remove or replace the CSRF token and replay
+  3. Replay with a foreign Origin/Referer header
+validation_criteria:
+  - the state change succeeds without a valid token or with a foreign Origin
+evidence_required:
+  - original request, forged request, and the resulting state change

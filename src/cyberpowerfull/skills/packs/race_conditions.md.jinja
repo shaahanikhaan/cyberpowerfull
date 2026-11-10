@@ -1,0 +1,18 @@
+{# Skill pack: race_conditions #}
+## Skill: Race Conditions
+applies_when: Use when a limit is enforced by check-then-act logic.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - single-use coupons, withdrawal limits, vote limits, inventory counters
+probe_order:
+  1. Establish the sequential baseline behaviour
+  2. Send a small parallel burst (two to five requests) of the same operation
+  3. Compare final state against the sequential baseline
+validation_criteria:
+  - the limit is exceeded by concurrent requests
+evidence_required:
+  - request timestamps, the responses, and the final resource state
+constraints:
+  - keep bursts small; respect scope.json max_requests_per_second

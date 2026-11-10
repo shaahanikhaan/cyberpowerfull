@@ -1,0 +1,20 @@
+{# Skill pack: idor #}
+## Skill: Insecure Direct Object Reference
+applies_when: Use when object identifiers appear in paths, query strings, or JSON bodies.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - sequential integers, UUIDs, or slugs identifying accounts, invoices, documents
+  - endpoints that return objects with an owner field
+probe_order:
+  1. Authenticate two test identities provisioned for this engagement
+  2. Request the same object identifier as both identities
+  3. Swap identifiers horizontally, then vertically against an admin-only object
+validation_criteria:
+  - identity B receives identity A's object with a 2xx response and A's data
+  - admin-only object is returned to a non-admin identity
+evidence_required:
+  - request, response body excerpt, and both identity labels
+caution:
+  - never enumerate beyond the identifier range granted in scope.json

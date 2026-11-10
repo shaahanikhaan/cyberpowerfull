@@ -1,0 +1,19 @@
+{# Skill pack: rce #}
+## Skill: Remote Code Execution
+applies_when: Use when user input reaches an interpreter, template engine, or command builder.
+target_under_test: {{ target }}
+difficulty_level: {{ difficulty_level }}
+
+signals:
+  - template rendering of user input, eval-like parameters, file names in shell commands
+  - deserialisation of user-controlled blobs, known vulnerable dependency versions
+probe_order:
+  1. Identify the interpreter boundary from error text and behaviour
+  2. Use non-destructive arithmetic or timer canaries to prove evaluation
+  3. Stop at proof of evaluation; never execute a shell
+validation_criteria:
+  - deterministic evaluation proof (for example 7*7 rendered as 49) with timing confirmation
+evidence_required:
+  - payload, response, and timing measurement
+constraints:
+  - proof-only: no reverse shells, no persistence, no data exfiltration
