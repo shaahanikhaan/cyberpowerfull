@@ -1,0 +1,83 @@
+# Configuration for cyberpowerfull (10-Hour Powerfull Phase)
+# English: Configuration for Recon + POWERFULL New Vulnerability Discovery (Beyond Known CVEs)
+# Roman Urdu: Recon + POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage) ke liye configuration (Recon + POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage) ke liye configuration)
+
+language: english
+output_format: json
+
+# English: Recon configuration
+# Roman Urdu: Recon configuration (Recon configuration)
+recon:
+  nmap_args: '-sV -sC -T4'
+  rustscan_args: '--quick'
+  subdomain_depth: 3
+  waf_bypass_enabled: true
+  ai_agent_integration: true
+
+# English: Scanner configuration (NEW - Recon first, then POWERFULL discovery)
+# Roman Urdu: Scanner configuration (NEW - Recon pehle, phir POWERFULL discovery) (Scanner configuration (NEW - Recon pehle, phir POWERFULL discovery))
+scanner:
+  cve_only: false  # English: Not limited to known CVEs | Roman Urdu: Sirf pehle se maloom CVEs tak limited nahi (Sirf pehle se maloom CVEs tak limited nahi)
+  deep_research: true  # English: 2026 AI-driven CVE discovery research | Roman Urdu: 2026 AI-driven CVE discovery research (2026 AI-driven CVE discovery research)
+  powerfull_tools: true  # English: POWERFULL new vulnerability discovery tools | Roman Urdu: POWERFULL nayi vulnerability discovery tools (POWERFULL nayi vulnerability discovery tools)
+  recon_first: true  # English: Recon phase first, then scanner | Roman Urdu: Recon phase pehle, phir scanner (Recon phase pehle, phir scanner)
+
+# English: 10-Hour Powerfull Phase Design
+# Roman Urdu: 10-Hour Powerfull Phase Design (10-Hour Powerfull Phase Design)
+powerfull_phase:
+  duration_per_phase: 2  # Hours per phase
+  total_phases: 5
+  phase1_research: true
+  phase2_integration: true
+  phase3_custom_gaps: true
+  phase4_execution: true
+  phase5_reporting: true
+
+# English: Language support
+# Roman Urdu: Language support (Language support)
+language_support:
+  english: true
+  roman_urdu: true
+
+# English: WAF Bypass configuration
+# Roman Urdu: WAF Bypass configuration (WAF Bypass configuration)
+waf_bypass:
+  enabled: true
+  origin_ip_hunt: true
+  transport_bypass: true
+  parsing_fuzz: true
+  nmap_evasion: true
+
+# English: AI Agent integration
+# Roman Urdu: AI Agent integration (AI Agent integration)
+ai_agents:
+  enabled: true
+  agents:
+    - pentagi
+    - pentestgpt
+    - rapidpen
+    - breachseek
+    - deepexploit
+    - crla
+    - mddqn
+    - shellgpt
+    - kali_ai_security_toolkit
+
+# English: POWERFULL New Vulnerability Discovery (Beyond Known CVEs)
+# Roman Urdu: POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage) (POWERFULL Nayi Vulnerability Discovery (Pehle se maloom CVEs se aage))
+new_vuln_discovery:
+  enabled: true
+  deep_research_methods:
+    - anthropic_mythos  # 2026 AI-driven discovery
+    - google_big_sleep  # 2026 AI agent discovery
+    - depthfirst_agent  # 2026 autonomous discovery
+    - aisle_ai_system   # 2026 zero-day discovery
+    - cnn_ocsvm_framework  # 2026 behavioral analysis
+    - semantic_code_analyzer  # 2026 semantic scanning
+    - structural_pattern_matcher  # 2026 pattern matching
+  powerfull_tools:
+    - behavioral_pattern_analyzer
+    - semantic_code_scanner
+    - ai_agent_zero_day
+    - structural_pattern_matcher
+  beyond_known_cves: true  # English: Not limited to known CVE databases | Roman Urdu: Sirf pehle se maloom CVE databases tak limited nahi (Sirf pehle se maloom CVE databases tak limited nahi)

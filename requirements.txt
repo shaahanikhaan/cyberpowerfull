@@ -1,0 +1,96 @@
+# Requirements for cyberpowerfull (POWERFULL Phase - Recon + Scanner)
+# English & Roman Urdu support
+# English: Includes POWERFULL new vulnerability discovery beyond known CVEs
+# Roman Urdu: POWERFULL nayi vulnerability discovery shamil hai jo pehle se maloom CVEs se aage hai (POWERFULL nayi vulnerability discovery shamil hai jo pehle se maloom CVEs se aage hai)
+
+# Recon tools (Recon ke tools)
+nmap>=7.95
+rustscan>=2.0.0
+sublist3r>=1.0.0
+amass>=4.0.0
+subfinder>=2.0.0
+httpx>=1.0.0
+naabu>=1.0.0
+python-whois>=0.9.0
+scapy>=2.5.0
+dalfox>=2.0.0  # Kali 2026.3
+katana>=1.0.0  # Kali 2026.3
+qsreplace>=1.0.0  # Kali 2026.3
+snaffler-ng>=1.0.0  # Kali 2026.3
+origin-ip-bypass>=1.0.0  # Open source
+evilwaf>=1.0.0  # Open source
+waffled>=1.0.0  # Open source
+
+# Web tools (Web ke tools)
+sqlmap>=1.7.0
+dalfox>=2.0.0  # Kali 2026.3
+katana>=1.0.0  # Kali 2026.3
+qsreplace>=1.0.0  # Kali 2026.3
+nikto>=2.5.0
+dirb>=2.0.0
+ffuf>=1.0.0
+gobuster>=1.0.0
+feroxbuster>=1.0.0
+kiterunner>=1.0.0
+hakrawler>=1.0.0
+owasp-zap>=2.13.0
+burpsuite>=2026.0.0
+xsstrike>=1.0.0  # Kali 2026.1
+sstimap>=1.0.0  # Kali 2026.1
+wpprobe>=1.0.0  # Kali 2026.1
+
+# Exploitation (Exploitation)
+metasploit-framework>=6.0.0
+netexec>=1.0.0
+ssh-snake>=1.0.0
+metasploitmcp>=1.0.0  # Kali 2026.1
+atomic-operator>=1.0.0  # Kali 2026.1
+adaptixc2>=1.0.0  # Kali 2026.1
+xsstrike>=1.0.0  # Kali 2026.1
+sstimap>=1.0.0  # Kali 2026.1
+wpprobe>=1.0.0  # Kali 2026.1
+
+# Credentials (Credentials)
+hydra>=9.0.0
+john>=1.9.0
+hashcat>=6.2.0
+snaffler-ng>=1.0.0  # Kali 2026.3
+
+# Wireless (Wireless)
+aircrack-ng>=1.7.0
+wifite2>=2.0.0
+fluxion>=1.0.0  # Kali 2026.1
+sdrangel>=1.0.0  # Kali 2026.3
+
+# AI & Automation Agents (AI & Automation Agents)
+pentagi>=1.0.0  # Open source
+pentestgpt>=1.0.0  # Open source
+rapidpen>=1.0.0  # Open source
+breachseek>=1.0.0  # Open source
+deepexploit>=1.0.0  # Open source
+crla>=1.0.0  # Open source
+mddqn>=1.0.0  # Open source
+shellgpt>=1.0.0  # Open source
+kali-ai-security-toolkit>=1.0.0  # Open source
+
+# POWERFULL New Vulnerability Discovery (Beyond Known CVEs)
+# English: Deep research-based discovery tools (2026 AI-driven methods)
+# Roman Urdu: Deep research-based discovery tools (2026 AI-driven methods) (Deep research-based discovery tools (2026 AI-driven methods))
+anthropic-mythos-api>=1.0.0  # 2026 AI-driven CVE discovery
+google-big-sleep>=1.0.0  # 2026 AI agent discovery
+depthfirst-agent>=1.0.0  # 2026 autonomous discovery
+aisle-ai-system>=1.0.0  # 2026 zero-day discovery
+cnn-ocsvm-framework>=1.0.0  # 2026 behavioral analysis
+semantic-code-analyzer>=1.0.0  # 2026 semantic scanning
+structural-pattern-matcher>=1.0.0  # 2026 pattern matching
+
+# Framework (Framework)
+pyyaml>=6.0.0
+colorama>=0.4.6
+argparse>=1.0.0
+logging>=0.5.1
+json>=2.0.9
+urdu-roman>=1.0.0  # Custom library for Roman Urdu translation
+numpy>=1.24.0  # For AI agent analysis
+scikit-learn>=1.3.0  # For CNN+OC-SVM framework
+tensorflow>=2.15.0  # For semantic analysis
