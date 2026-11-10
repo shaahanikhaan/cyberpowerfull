@@ -211,7 +211,8 @@ class TestPlanAndProgress:
             aggressive=True,
         )
         text = "\n".join(lines)
-        assert "example.com" in text
+        # Exact match on the target line, not a substring check: the plan names the host.
+        assert lines[0] == "target      example.com"
         assert "just created" in text
         assert "recon" in text
         assert "aggressive" in text
