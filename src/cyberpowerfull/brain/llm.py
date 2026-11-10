@@ -1,13 +1,14 @@
-"""Local-only inference transport.
+"""Decision backends for the reasoning loop.
 
-Three backends are supported and every one of them talks to loopback only:
+Three backends are supported:
 
-* ``ollama:qwen3:4b``  - Ollama HTTP API (default)
-* ``llamacpp:model``   - llama.cpp ``llama-server`` OpenAI-compatible API
+* ``auto``           - the built-in deterministic agent (default; no server)
+* ``llamacpp:model`` - llama.cpp ``llama-server`` OpenAI-compatible API
 * ``replay:path.json`` - deterministic replay of a recorded decision stream
 
-Cloud endpoints are rejected before a single byte is sent: this agent has no
-API-key path, and none will be added.
+Model traffic, when used at all, talks to loopback only. Cloud endpoints are
+rejected before a single byte is sent: this agent has no API-key path, and
+none will be added.
 """
 
 from __future__ import annotations
@@ -27,13 +28,12 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 from pydantic import ValidationError
 
-from cyberpowerfull import DEFAULT_ENDPOINT, DEFAULT_MODEL
+from cyberpowerfull import DEFAULT_ENDPOINT
 from cyberpowerfull.config import ModelConfig
 from cyberpowerfull.errors import LLMError
 from cyberpowerfull.models import Decision
 
 DEFAULT_ENDPOINTS: dict[str, str] = {
-    "ollama": DEFAULT_ENDPOINT,
     "llamacpp": "http://127.0.0.1:8080",
 }
 
@@ -102,7 +102,7 @@ def parse_decision(text: str, *, step: int = 0) -> Decision:
 
 
 class LLMClient(Protocol):
-    """Minimal interface every local backend implements."""
+    """Minimal interface every decision backend implements."""
 
     backend: str
     model: str
@@ -157,8 +157,9 @@ def _post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[str, A
         raise LLMError(f"inference HTTP error {exc.code} from {url}") from exc
     except URLError as exc:
         raise LLMError(
-            f"inference endpoint unreachable: {url} ({exc.reason}). Start the local model server "
-            "first (for example: ollama serve && ollama pull qwen3:4b)"
+            f"inference endpoint unreachable: {url} ({exc.reason}). Start the local model "
+            "server first (for example: llama-server -m model.gguf), or drop --llm to "
+            "use the built-in auto agent"
         ) from exc
     except TimeoutError as exc:
         raise LLMError(f"inference request to {url} timed out") from exc
@@ -201,89 +202,10 @@ def _request_timeout(timeout: float, deadline: float | None) -> float:
 
 
 @dataclass
-class OllamaClient:
-    """Ollama ``/api/chat`` backend."""
-
-    model: str = DEFAULT_MODEL
-    endpoint: str = DEFAULT_ENDPOINT
-    temperature: float = 0.1
-    context_window: int = 32768
-    timeout: int = 180
-    max_retries: int = 2
-    deadline: float | None = field(default=None, repr=False)
-    backend: ClassVar[str] = "ollama"
-
-    def __post_init__(self) -> None:
-        self.endpoint = assert_local_endpoint(self.endpoint)
-
-    def set_deadline(self, deadline: float) -> None:
-        self.deadline = deadline
-
-    def decide(self, system_prompt: str, step_prompt: str, *, step: int = 0) -> Decision:
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": step_prompt},
-            ],
-            "stream": False,
-            "format": "json",
-            "options": {
-                "temperature": self.temperature,
-                "num_ctx": self.context_window,
-                "num_predict": 512,
-            },
-        }
-        if self.model.lower().startswith("qwen3"):
-            payload["think"] = False
-        last_error: Exception | None = None
-        for _ in range(max(1, self.max_retries)):
-            try:
-                data = _post_json(
-                    f"{self.endpoint}/api/chat",
-                    payload,
-                    _request_timeout(self.timeout, self.deadline),
-                )
-                message = data.get("message")
-                if not isinstance(message, dict):
-                    raise LLMError("ollama response has no message object")
-                return parse_decision(str(message.get("content") or ""), step=step)
-            except LLMError as exc:
-                last_error = exc
-        raise LLMError(str(last_error) if last_error else "ollama inference failed")
-
-    def health(self) -> dict[str, Any]:
-        try:
-            data = _get_json(f"{self.endpoint}/api/tags", min(self.timeout, 10))
-        except LLMError as exc:
-            return {
-                "ok": False,
-                "backend": self.backend,
-                "endpoint": self.endpoint,
-                "error": str(exc),
-            }
-        raw_models = data.get("models")
-        if not isinstance(raw_models, list):
-            return {"ok": False, "backend": self.backend, "error": "invalid Ollama model list"}
-        models = [str(item.get("name", "")) for item in raw_models if isinstance(item, dict)]
-        requested = self.model if ":" in self.model else f"{self.model}:latest"
-        normalized = [model if ":" in model else f"{model}:latest" for model in models]
-        ok = requested in normalized
-        return {
-            "ok": ok,
-            "backend": self.backend,
-            "endpoint": self.endpoint,
-            "model": self.model,
-            "models": models[:20],
-            **({} if ok else {"error": f"model {self.model!r} is not installed"}),
-        }
-
-
-@dataclass
 class LlamaCppClient:
     """llama.cpp ``llama-server`` OpenAI-compatible backend."""
 
-    model: str = DEFAULT_MODEL
+    model: str = "local-model"
     endpoint: str = DEFAULT_ENDPOINTS["llamacpp"]
     temperature: float = 0.1
     context_window: int = 32768
@@ -414,7 +336,7 @@ class ReplayClient:
 
 
 def build_client(spec: str | None = None, config: ModelConfig | None = None) -> LLMClient:
-    """Build a local client from a ``backend[:model]`` / ``replay:path`` spec."""
+    """Build a decision backend from an ``auto`` / ``backend[:model]`` spec."""
     try:
         cfg = config or ModelConfig.from_env()
     except (TypeError, ValueError) as exc:
@@ -431,13 +353,26 @@ def build_client(spec: str | None = None, config: ModelConfig | None = None) -> 
         backend = "llamacpp"
     configured_backend = "llamacpp" if cfg.backend.lower() in aliases else cfg.backend.lower()
     if "://" in model:
-        # ``ollama:http://host:11434`` is a common slip: the endpoint is a config
+        # ``llamacpp:http://host:8080`` is a common slip: the endpoint is a config
         # value (CYBERPOWERFULL_LLM_ENDPOINT / ModelConfig), not part of the model id.
         # Silently using the URL as a model name would look like it worked.
         raise LLMError(
             f"{model!r} is an endpoint, not a model id: pass a model name after the colon "
             f"and set the endpoint with CYBERPOWERFULL_LLM_ENDPOINT "
             f"(loopback only, currently {cfg.endpoint!r})"
+        )
+    if backend == "auto":
+        # The agent itself needs no endpoint, but a remote endpoint in the
+        # environment is still a misconfiguration worth failing fast on.
+        assert_local_endpoint(cfg.endpoint)
+        from cyberpowerfull.brain.agent import AutoAgent
+
+        return AutoAgent()
+    if backend == "ollama":
+        raise LLMError(
+            "the Ollama backend was removed in 5.0: drop --llm to use the built-in "
+            "auto agent (no server needed), or point --llm at a local llama-server "
+            "with 'llamacpp[:model]'"
         )
     model = model or cfg.model
     configured_default = DEFAULT_ENDPOINTS.get(configured_backend, DEFAULT_ENDPOINT)
@@ -446,15 +381,6 @@ def build_client(spec: str | None = None, config: ModelConfig | None = None) -> 
         endpoint = cfg.endpoint
     else:
         endpoint = DEFAULT_ENDPOINTS.get(backend, cfg.endpoint)
-    if backend == "ollama":
-        return OllamaClient(
-            model=model,
-            endpoint=endpoint,
-            temperature=cfg.temperature,
-            context_window=cfg.context_window,
-            timeout=cfg.request_timeout,
-            max_retries=cfg.max_retries,
-        )
     if backend == "llamacpp":
         return LlamaCppClient(
             model=model,
@@ -465,7 +391,7 @@ def build_client(spec: str | None = None, config: ModelConfig | None = None) -> 
             max_retries=cfg.max_retries,
         )
     raise LLMError(
-        f"unsupported inference backend {backend!r}; use ollama, llamacpp, or replay:<path>"
+        f"unsupported decision backend {backend!r}; use auto, llamacpp, or replay:<path>"
     )
 
 
@@ -473,7 +399,6 @@ __all__ = [
     "DEFAULT_ENDPOINTS",
     "LLMClient",
     "LlamaCppClient",
-    "OllamaClient",
     "ReplayClient",
     "assert_local_endpoint",
     "build_client",
