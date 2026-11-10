@@ -28,6 +28,7 @@ from cyberpowerfull.knowledge import (
     search_exploit_db,
     wordlist_summary,
 )
+from cyberpowerfull.live import LiveDisplay
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import new_id
 from cyberpowerfull.playbook import PlaybookRunner, describe_playbooks, get_playbook
@@ -35,13 +36,14 @@ from cyberpowerfull.reporting import severity_breakdown, write_reports
 from cyberpowerfull.scope import load_scope
 from cyberpowerfull.skills import skill_index
 from cyberpowerfull.tools.registry import catalog, external_agent_catalog
-from cyberpowerfull.trace import StepRecord, load_trace, save_trace, summarize_trace
+from cyberpowerfull.trace import load_trace, save_trace, summarize_trace
 
 DESCRIPTION = (
     "cyberpowerfull - local-only autonomous penetration-testing agent.\n"
     "Runs recon -> scanning -> validation -> reporting against an authorized target "
-    "using a local open-weight model (Ollama / llama.cpp), or a deterministic "
-    "multi-tool playbook when no model is available. No chat mode. No cloud inference.\n"
+    "using the built-in auto agent (no model server needed), an optional local "
+    "llama.cpp model, or a deterministic multi-tool playbook. No chat mode. "
+    "No cloud inference.\n"
     "Simplest use: 'cpf TARGET' — one command, no configuration, no scope file to write."
 )
 
@@ -52,7 +54,8 @@ examples:
   cpf example.com --plan                       # show what it would do, run nothing
   cpf 127.0.0.1 --i-am-authorized              # non-interactive attestation
   cyberpowerfull --scope scope.json --target 127.0.0.1
-  cyberpowerfull --scope scope.json --target lab.internal --llm ollama:qwen3:4b --max-iterations 20
+  cyberpowerfull --scope scope.json --target lab.internal --max-iterations 20
+  cyberpowerfull --scope scope.json --target lab.internal --llm llamacpp
   cyberpowerfull --scope scope.json --target lab.internal --playbook full --parallel 4
   cyberpowerfull --scope scope.json --target app.example.test --playbook web
   cyberpowerfull --lab                          # real loopback lab, one command
@@ -70,7 +73,7 @@ exit codes:
   2  usage error
   3  scope.json missing, invalid, unauthorized, or expired
   4  target outside the authorized scope
-  5  local inference unavailable
+  5  decision backend unavailable
   6  tool argument or execution error, or a missing local knowledge source
   7  policy violation or blocked delegation by the reasoning model
   8  unknown playbook name
@@ -158,14 +161,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ai",
         action="store_true",
-        help="one-command mode: use the local model loop instead of the deterministic playbook",
+        help="one-command mode: use the autonomous agent loop instead of the deterministic "
+        "playbook (built-in auto agent; add --llm llamacpp for a local model)",
     )
     parser.add_argument(
         "--llm",
         default=None,
         metavar="SPEC",
-        help=f"local inference backend: ollama[:MODEL], llamacpp[:MODEL], replay:PATH "
-        f"(default: $CYBERPOWERFULL_LLM or ollama:{DEFAULT_MODEL})",
+        help="decision backend: auto (built-in agent, default), llamacpp[:MODEL], "
+        "replay:PATH (default: $CYBERPOWERFULL_LLM or auto)",
     )
     parser.add_argument(
         "--replay", metavar="TRACE", help="replay a recorded trace instead of running the agent"
@@ -431,7 +435,7 @@ def _apply_environment(parser: argparse.ArgumentParser, args: argparse.Namespace
         args.scope = os.environ.get("CYBERPOWERFULL_SCOPE", "scope.json")
     if args.llm is None:
         args.llm = os.environ.get("CYBERPOWERFULL_LLM") or (
-            f"{os.environ.get('CYBERPOWERFULL_LLM_BACKEND', 'ollama')}:"
+            f"{os.environ.get('CYBERPOWERFULL_LLM_BACKEND', 'auto')}:"
             f"{os.environ.get('CYBERPOWERFULL_MODEL', DEFAULT_MODEL)}"
         )
     if args.max_iterations is None:
@@ -448,15 +452,11 @@ def _apply_environment(parser: argparse.ArgumentParser, args: argparse.Namespace
         )
 
 
-def _progress(record: StepRecord) -> None:
-    status = (record.result or {}).get("status", "-")
-    level = record.tda.get("level", "-")
-    print(
-        f"[{record.index:02d}] {record.action:<16} {record.tool or '-':<12} "
-        f"status={status:<8} findings={len(record.finding_ids)} "
-        f"difficulty={level:<8} node={record.node or '-'}",
-        file=sys.stderr,
-    )
+def _make_display(args: argparse.Namespace, *, total: int | None) -> LiveDisplay | None:
+    """Foreground progress display, unless --quiet suppressed it."""
+    if args.quiet:
+        return None
+    return LiveDisplay(total=total)
 
 
 def _print_summary(trace, *, trace_path: Path | None, report_path: Path | None) -> None:
@@ -489,7 +489,7 @@ def _run(args: argparse.Namespace) -> int:
     cfg = RunConfig(
         scope_path=Path(args.scope),
         target=target,
-        llm_spec=args.llm or f"ollama:{DEFAULT_MODEL}",
+        llm_spec=args.llm or "auto",
         max_iterations=args.max_iterations,
         max_tokens=args.max_tokens,
         max_seconds=args.max_seconds,
@@ -502,22 +502,30 @@ def _run(args: argparse.Namespace) -> int:
     client = build_client(cfg.llm_spec)
     run_id = new_id("run-")
 
-    with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
-        orchestrator = Orchestrator(
-            scope=scope,
-            config=cfg,
-            client=client,
-            memory=memory,
-            target=target,
-            run_id=run_id,
-        )
-        if not args.quiet:
-            print(
-                f"starting run {run_id} against {target} "
-                f"(engagement={scope.engagement}, backend={client.backend}, model={client.model})",
-                file=sys.stderr,
+    display = _make_display(args, total=args.max_iterations)
+    try:
+        with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
+            orchestrator = Orchestrator(
+                scope=scope,
+                config=cfg,
+                client=client,
+                memory=memory,
+                target=target,
+                run_id=run_id,
             )
-        result = orchestrator.run(progress=None if args.quiet else _progress)
+            if display is not None:
+                display.note(
+                    f"starting run {run_id} against {target} "
+                    f"(engagement={scope.engagement}, backend={client.backend}, "
+                    f"model={client.model})"
+                )
+            result = orchestrator.run(
+                progress=display.progress if display is not None else None,
+                step_start=display.step_start if display is not None else None,
+            )
+    finally:
+        if display is not None:
+            display.close()
 
     trace = result.trace
     trace_path = save_trace(trace, cfg.trace_path)
@@ -745,7 +753,7 @@ def _doctor(args: argparse.Namespace) -> int:
             print("  next: install " + ", ".join(urgent) + " for the full tool set")
     if not toolchain.nuclei_templates.get("path"):
         print("  next: run 'nuclei -update-templates' so template validation is available")
-    print("  note: playbooks run without a model; the reasoning loop needs one")
+    print("  note: playbooks and the auto agent need no model; --llm llamacpp needs llama-server")
     return 0 if health.get("ok") else LLMError.exit_code
 
 
@@ -829,7 +837,7 @@ def _run_playbook(args: argparse.Namespace) -> int:
     cfg = RunConfig(
         scope_path=Path(args.scope),
         target=target,
-        llm_spec=args.llm or f"ollama:{DEFAULT_MODEL}",
+        llm_spec=args.llm or "auto",
         max_iterations=args.max_iterations,
         max_tokens=args.max_tokens,
         max_seconds=args.max_seconds,
@@ -841,23 +849,32 @@ def _run_playbook(args: argparse.Namespace) -> int:
     cfg.ensure_dirs()
     playbook = get_playbook(args.playbook)
     run_id = new_id("play-")
-    with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
-        runner = PlaybookRunner(
-            scope=scope,
-            target=target,
-            memory=memory,
-            dry_run=cfg.dry_run,
-            max_seconds=cfg.max_seconds,
-            max_steps=args.max_steps,
-            parallel=args.parallel or None,
-            run_id=run_id,
-        )
-        print(
-            f"starting playbook {playbook.name} against {target} "
-            f"(engagement={scope.engagement}, steps={len(playbook.steps)})",
-            file=sys.stderr,
-        )
-        result = runner.run(playbook, progress=None if args.quiet else _progress)
+    display = _make_display(args, total=len(playbook.steps))
+    try:
+        with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
+            runner = PlaybookRunner(
+                scope=scope,
+                target=target,
+                memory=memory,
+                dry_run=cfg.dry_run,
+                max_seconds=cfg.max_seconds,
+                max_steps=args.max_steps,
+                parallel=args.parallel or None,
+                run_id=run_id,
+            )
+            if display is not None:
+                display.note(
+                    f"starting playbook {playbook.name} against {target} "
+                    f"(engagement={scope.engagement}, steps={len(playbook.steps)})"
+                )
+            result = runner.run(
+                playbook,
+                progress=display.progress if display is not None else None,
+                step_start=display.step_start if display is not None else None,
+            )
+    finally:
+        if display is not None:
+            display.close()
     trace_path = save_trace(result.trace, cfg.trace_path)
     paths = write_reports(result.trace, cfg.out_dir)
     if args.json:
@@ -1106,7 +1123,6 @@ def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
         next_steps,
         profile_for,
         render_plan,
-        step_line,
         target_host,
     )
 
@@ -1130,7 +1146,7 @@ def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
     cfg = RunConfig(
         scope_path=path,
         target=raw_target,
-        llm_spec=args.llm or f"ollama:{DEFAULT_MODEL}",
+        llm_spec=args.llm or "auto",
         max_iterations=args.max_iterations,
         max_tokens=args.max_tokens,
         max_seconds=args.max_seconds,
@@ -1171,30 +1187,32 @@ def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
     playbook = get_playbook(profile.playbook)
     run_id = new_id("cpf-")
     total = len(playbook.steps)
-    counter = {"n": 0}
-
-    def progress(record: StepRecord) -> None:
-        counter["n"] += 1
-        print(f"  {step_line(record, index=counter['n'], total=total)}", file=sys.stderr)
-
-    with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
-        runner = PlaybookRunner(
-            scope=scope,
-            target=raw_target,
-            memory=memory,
-            dry_run=cfg.dry_run,
-            max_seconds=args.max_seconds or profile.max_seconds,
-            max_steps=args.max_steps,
-            parallel=args.parallel or profile.parallel,
-            run_id=run_id,
-        )
-        if not args.quiet:
-            print(
-                f"  running playbook '{playbook.name}' against {raw_target} "
-                f"({total} planned steps)",
-                file=sys.stderr,
+    display = _make_display(args, total=total)
+    try:
+        with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
+            runner = PlaybookRunner(
+                scope=scope,
+                target=raw_target,
+                memory=memory,
+                dry_run=cfg.dry_run,
+                max_seconds=args.max_seconds or profile.max_seconds,
+                max_steps=args.max_steps,
+                parallel=args.parallel or profile.parallel,
+                run_id=run_id,
             )
-        result = runner.run(playbook, progress=None if args.quiet else progress)
+            if display is not None:
+                display.note(
+                    f"running playbook '{playbook.name}' against {raw_target} "
+                    f"({total} planned steps)"
+                )
+            result = runner.run(
+                playbook,
+                progress=display.progress if display is not None else None,
+                step_start=display.step_start if display is not None else None,
+            )
+    finally:
+        if display is not None:
+            display.close()
 
     trace = result.trace
     trace_path = save_trace(trace, cfg.trace_path)
@@ -1308,7 +1326,7 @@ def _run_lab(args: argparse.Namespace) -> int:
     cfg = RunConfig(
         scope_path=Path(args.scope),
         target=LAB_TARGET,
-        llm_spec=args.llm or f"ollama:{DEFAULT_MODEL}",
+        llm_spec=args.llm or "auto",
         max_iterations=args.max_iterations,
         max_tokens=args.max_tokens,
         max_seconds=args.max_seconds,
@@ -1320,22 +1338,28 @@ def _run_lab(args: argparse.Namespace) -> int:
     cfg.ensure_dirs()
     name = args.playbook or LAB_DEFAULT_PLAYBOOK
     run_id = new_id("lab-")
-    with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
-        try:
-            result, port = run_local_lab(
-                scope=scope,
-                memory=memory,
-                playbook=name,
-                port=args.lab_port,
-                parallel=args.parallel or None,
-                max_steps=args.max_steps,
-                dry_run=cfg.dry_run,
-                run_id=run_id,
-                progress=None if args.quiet else _progress,
-            )
-        except RuntimeError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
+    display = _make_display(args, total=len(get_playbook(name).steps))
+    try:
+        with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
+            try:
+                result, port = run_local_lab(
+                    scope=scope,
+                    memory=memory,
+                    playbook=name,
+                    port=args.lab_port,
+                    parallel=args.parallel or None,
+                    max_steps=args.max_steps,
+                    dry_run=cfg.dry_run,
+                    run_id=run_id,
+                    progress=display.progress if display is not None else None,
+                    step_start=display.step_start if display is not None else None,
+                )
+            except RuntimeError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+    finally:
+        if display is not None:
+            display.close()
     trace_path = save_trace(result.trace, cfg.trace_path)
     paths = write_reports(result.trace, cfg.out_dir)
     if args.json:

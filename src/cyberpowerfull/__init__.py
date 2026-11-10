@@ -1,6 +1,6 @@
 """cyberpowerfull - a local-only autonomous penetration-testing agent.
 
-The public surface is deliberately small: a model-backed reasoning loop
+The public surface is deliberately small: an autonomous decision engine
 (:mod:`cyberpowerfull.brain`), a typed tool layer (:mod:`cyberpowerfull.tools`),
 and a deterministic memory layer (:mod:`cyberpowerfull.memory`). There is no
 general-purpose chat interface.
@@ -8,15 +8,17 @@ general-purpose chat interface.
 
 from __future__ import annotations
 
-__version__ = "4.0.0"
+__version__ = "5.0.0"
 
 AGENT_NAME = "cyberpowerfull"
 
-#: Default local open-weight model served by Ollama. No cloud inference exists in
-#: this project; the transport layer refuses non-loopback endpoints.
-DEFAULT_MODEL = "qwen3:4b"
+#: Default decision-engine id: the built-in deterministic agent. An optional
+#: local model server (llama.cpp) can be selected with ``--llm llamacpp``;
+#: no cloud inference exists in this project.
+DEFAULT_MODEL = "auto-1"
 
-#: Default local inference endpoint (Ollama).
+#: Default local inference endpoint (loopback). Only used when a model
+#: backend is selected; the default auto agent needs no server.
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 
 #: Loopback hosts allowed as inference endpoints (no wildcard binds).

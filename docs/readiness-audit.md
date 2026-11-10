@@ -12,6 +12,13 @@ surfacing failures rather than adding unverified integrations.
 > nuclei-template libraries (not arbitrary host paths), and the playbook path reports steps it
 > could not run in the trace (`skipped`) and in the report. Re-verify before relying on any claim
 > here for a specific engagement.
+>
+> **Status note (v5.0.0).** The inference backend changed: the Ollama client is removed, the
+> default backend is the built-in auto agent (no model, no server), and a local model is used
+> only via `--llm llamacpp:model` against `llama-server`. The loopback-only transport, the
+> no-redirect/no-proxy guards, and the decision-retry behavior the audit verified still hold;
+> only the "Local inference" row above and reference [1] describe a backend that no longer
+> ships. See `CHANGELOG.md` for the 5.0.0 entry.
 
 ## Research and changes
 

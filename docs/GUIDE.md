@@ -18,7 +18,7 @@ loopback HTTP service scanned by a **real** playbook — no model, no scanner bi
 - [3. Authorize a real engagement](#3-authorize-a-real-engagement)
 - [4. Choose an execution path](#4-choose-an-execution-path)
 - [5. Playbooks in practice](#5-playbooks-in-practice)
-- [6. The reasoning loop (local model)](#6-the-reasoning-loop-local-model)
+- [6. The reasoning loop (built-in agent, optional local model)](#6-the-reasoning-loop-built-in-agent-optional-local-model)
 - [7. Tools, capabilities, and packets](#7-tools-capabilities-and-packets)
 - [8. Reading the results](#8-reading-the-results)
 - [9. External agents (Strix, PentAGI, Sn1per)](#9-external-agents-strix-pentagi-sn1per)
@@ -83,7 +83,8 @@ cpf example.com --scope my-engagement.json                            # use a sc
   live engagement is an operator decision.
 - `--polite` withholds the `aggressive` capability (no high-rate scans).
 - `--with-credentials` adds `credential_testing`; it is off unless you ask for it.
-- `--ai` swaps the deterministic playbook for the local model loop (needs Ollama/llama.cpp).
+- `--ai` swaps the deterministic playbook for the autonomous agent loop (built-in auto agent;
+  add `--llm llamacpp:model` to use a local model instead).
 
 **What you get**
 
@@ -235,17 +236,22 @@ Dry-run prints the argv that would be executed and touches nothing:
 cyberpowerfull --scope scope.json --target app.example.test --playbook web --dry-run --json | jq '.steps[0].result.argv'
 ```
 
-## 6. The reasoning loop (local model)
+## 6. The reasoning loop (built-in agent, optional local model)
 
 ```bash
-ollama serve &
-ollama pull qwen3:4b
-cyberpowerfull --scope scope.json --target app.example.test --llm ollama:qwen3:4b
+cyberpowerfull --scope scope.json --target app.example.test
+```
+
+No model is needed: the default `auto` backend plans and runs the engagement itself. To use
+a local model instead, start `llama-server` and pass `--llm llamacpp:model`:
+
+```bash
+llama-server -m model.gguf -c 32768
+cyberpowerfull --scope scope.json --target app.example.test --llm llamacpp:model
 ```
 
 - The endpoint must be loopback (`127.0.0.1`, `localhost`, `::1`); anything else is rejected before
   a packet leaves the host (exit `5`).
-- `--llm llamacpp:model` for llama.cpp on `:8080`.
 - `--llm replay:examples/decisions.json` re-runs a recorded decision stream — useful for tests.
 - `--max-iterations`, `--max-tokens`, `--max-seconds` bound the run; `--dry-run` rehearses it.
 - The model sees the scope, the host inventory, the tool catalogue, at most eight skill packs, and
@@ -316,7 +322,7 @@ provider. If the agreement forbids that, do not grant the capability — playboo
 | exit `3`, "scope file not found" | no `scope.json`; run `--init-scope` (the lab prints the exact command) |
 | exit `3`, "not marked authorized" | `"authorized": false`; re-run with `--authorize --authorization-ref REF` |
 | exit `4` | the target is not inside `targets`/`domains`; fix the scope, not the tool |
-| exit `5` | model unreachable or non-loopback endpoint; check `ollama serve` / `--llm` |
+| exit `5` | model unreachable or non-loopback endpoint; check `llama-server` / `--llm` |
 | exit `6` | a tool failed or a knowledge source is missing; the report names the step |
 | exit `7` | policy block: capability missing, tool not allowed for the worker, or phase not permitted |
 | exit `8` | unknown playbook; `--list-playbooks` |
@@ -347,8 +353,8 @@ cyberpowerfull --scope scope.json --target staging.acme.test --playbook stealth 
 # D. Rehearse everything before touching the target
 cyberpowerfull --scope scope.json --target app.acme.test --playbook full --dry-run
 
-# E. Give the model the loop, bounded
-cyberpowerfull --scope scope.json --target app.acme.test --llm ollama:qwen3:4b \
+# E. Give the agent the loop, bounded (add --llm llamacpp:model for a local model)
+cyberpowerfull --scope scope.json --target app.acme.test \
   --max-iterations 8 --max-seconds 600
 ```
 

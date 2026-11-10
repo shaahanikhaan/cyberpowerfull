@@ -31,7 +31,7 @@ class TestHelpAndListing:
     def test_version(self, capsys) -> None:
         with pytest.raises(SystemExit):
             main(["--version"])
-        assert "cyberpowerfull 4.0.0" in capsys.readouterr().out
+        assert "cyberpowerfull 5.0.0" in capsys.readouterr().out
 
     def test_list_tools(self, capsys) -> None:
         assert main(["--list-tools"]) == 0
@@ -114,7 +114,7 @@ class TestCheck:
 
     def test_check_reports_unreachable_model(self, workdir: Path, capsys) -> None:
         with mock.patch("cyberpowerfull.brain.llm._local_open", side_effect=URLError("refused")):
-            code = main(["--check", "--scope", str(workdir / "scope.json")])
+            code = main(["--check", "--scope", str(workdir / "scope.json"), "--llm", "llamacpp"])
         assert code == 5
         assert "model error" in capsys.readouterr().out
 
@@ -124,8 +124,8 @@ class TestReplay:
         trace = TraceRecorder(
             target="127.0.0.1",
             engagement="replay",
-            model="qwen3:4b",
-            backend="ollama",
+            model="auto-1",
+            backend="auto",
             scope_fingerprint="abc123",
             run_id="run-replay",
         )
@@ -322,6 +322,8 @@ class TestEndToEndRun:
                     str(workdir / "trace.json"),
                     "--memory",
                     str(workdir / "memory.sqlite3"),
+                    "--llm",
+                    "llamacpp:lab-model",
                     "--max-iterations",
                     "1",
                     "--quiet",
@@ -501,7 +503,7 @@ class TestToolchainAndPlaybooks:
             lambda spec: type(
                 "C",
                 (),
-                {"health": lambda self: {"ok": True, "backend": "ollama", "endpoint": "local"}},
+                {"health": lambda self: {"ok": True, "backend": "auto", "endpoint": "local"}},
             )(),
         )
         assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 0
@@ -523,7 +525,7 @@ class TestToolchainAndPlaybooks:
                 "--scope",
                 str(workdir / "scope.json"),
                 "--llm",
-                "ollama:http://127.0.0.1:11434",
+                "llamacpp:http://127.0.0.1:8080",
             ]
         )
         assert code == 5
@@ -535,7 +537,7 @@ class TestToolchainAndPlaybooks:
             lambda spec: type(
                 "C",
                 (),
-                {"health": lambda self: {"ok": False, "backend": "ollama", "error": "down"}},
+                {"health": lambda self: {"ok": False, "backend": "auto", "error": "down"}},
             )(),
         )
         assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 5

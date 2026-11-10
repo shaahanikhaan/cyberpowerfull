@@ -104,10 +104,11 @@ Write a scope by hand instead of attesting at the prompt:
 
 Then: $VENV_DIR/bin/cyberpowerfull --scope scope.json --target HOST --playbook full
 
-Optional model (the reasoning loop; playbooks do not need it):
+No model to install: the built-in auto agent drives the reasoning loop.
+Optional local model instead:
 
-  ollama serve & ollama pull qwen3:4b
-  $VENV_DIR/bin/cyberpowerfull --scope scope.json --target HOST --llm ollama:qwen3:4b
+  llama-server -m model.gguf
+  $VENV_DIR/bin/cyberpowerfull --scope scope.json --target HOST --llm llamacpp
 
 Assets you are not authorized to test are out of scope. See SECURITY.md.
 EOF

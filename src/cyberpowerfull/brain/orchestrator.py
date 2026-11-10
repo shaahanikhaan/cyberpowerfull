@@ -126,6 +126,21 @@ class RootAgent:
         return decision.model_copy(update={"tool": action})
 
 
+_SEVERITY_ORDER = ("info", "low", "medium", "high", "critical")
+
+
+def _top_severity(findings: list[Finding] | None) -> str | None:
+    """Highest severity in a step's findings (for traces and live display)."""
+    best: str | None = None
+    for finding in findings or []:
+        level = finding.severity.value if isinstance(finding.severity, Severity) else None
+        if level is None:
+            continue
+        if best is None or _SEVERITY_ORDER.index(level) > _SEVERITY_ORDER.index(best):
+            best = level
+    return best
+
+
 def _network_entry(value: str) -> bool:
     try:
         ipaddress.ip_network(value, strict=False)
@@ -402,6 +417,11 @@ class Orchestrator:
             [tool.describe() for tool in self.tools.values()] if self.tools else catalog()
         )
         self.toolchain = toolchain or build_toolchain(versions=False, include_wordlists=True)
+        attach = getattr(client, "attach_context", None)
+        if callable(attach):
+            # Context-aware backends (the built-in auto agent) plan from the
+            # live scope, memory and inventory instead of the prompt alone.
+            attach(memory=memory, scope=scope, target=target, toolchain=self.toolchain)
 
     # -- planning ----------------------------------------------------------
     def _assess(self, budget: BudgetState) -> TDAReport:
@@ -454,9 +474,17 @@ class Orchestrator:
         )
 
     # -- execution ---------------------------------------------------------
-    def run(self, progress: Callable[[StepRecord], None] | None = None) -> RunResult:
+    def run(
+        self,
+        progress: Callable[[StepRecord], None] | None = None,
+        *,
+        step_start: Callable[[dict[str, Any]], None] | None = None,
+    ) -> RunResult:
         """Run the reason-act loop until a stop condition is reached."""
         started = time.monotonic()
+        # Deterministic backends (auto, replay) burn no tokens; only model
+        # backends are token-budgeted.
+        uses_tokens = bool(getattr(self.client, "uses_tokens", True))
         budget = BudgetState(
             max_iterations=self.config.max_iterations,
             max_tokens=self.config.max_tokens,
@@ -511,12 +539,13 @@ class Orchestrator:
                 error = f"prompt rendering failed: {exc}"
                 break
 
-            prompt_tokens = estimate_tokens(system_prompt) + estimate_tokens(step_prompt)
-            if prompt_tokens > budget.tokens_left:
-                budget.iterations -= 1
-                stop_reason = "budget_exhausted:tokens"
-                break
-            budget.tokens_used += prompt_tokens
+            if uses_tokens:
+                prompt_tokens = estimate_tokens(system_prompt) + estimate_tokens(step_prompt)
+                if prompt_tokens > budget.tokens_left:
+                    budget.iterations -= 1
+                    stop_reason = "budget_exhausted:tokens"
+                    break
+                budget.tokens_used += prompt_tokens
             step_started = utcnow()
             t0 = time.monotonic()
             try:
@@ -569,12 +598,13 @@ class Orchestrator:
                 )
                 break
 
-            budget.tokens_used += estimate_tokens(decision.model_dump_json())
+            if uses_tokens:
+                budget.tokens_used += estimate_tokens(decision.model_dump_json())
             budget.seconds_used = round(time.monotonic() - started, 3)
             exhausted = (
                 "seconds"
                 if budget.seconds_used >= budget.max_seconds
-                else "tokens" if budget.tokens_used >= budget.max_tokens else None
+                else "tokens" if uses_tokens and budget.tokens_used >= budget.max_tokens else None
             )
             if exhausted is not None:
                 record = self._record_step(
@@ -674,6 +704,16 @@ class Orchestrator:
             if remaining <= 0:
                 stop_reason = "budget_exhausted:seconds"
                 break
+            if step_start is not None:
+                step_start(
+                    {
+                        "tool": request.tool,
+                        "purpose": request.reason or decision.reason,
+                        "index": budget.iterations,
+                        "total": budget.max_iterations,
+                        "phase": node.phase.value,
+                    }
+                )
             if self.memory.consecutive_failures(request.tool, request.args) >= 2:
                 result = ToolResult(
                     tool=request.tool,
@@ -796,6 +836,8 @@ class Orchestrator:
                     "stdout_excerpt": result.stdout[:500],
                     "observations": result.observations[:10],
                     "error": result.error,
+                    "finding_titles": [finding.title for finding in (findings or [])[:5]],
+                    "top_severity": _top_severity(findings),
                 }
                 if result is not None
                 else None

@@ -4,9 +4,9 @@ Read this before changing anything. It records what exists, what must not break,
 live, what the tests actually prove, and what is deliberately unfinished. `README.md` is the
 public description; this file is the internal map.
 
-- **Version:** 4.0.0
-- **Last known good:** `main` after the 4.0.0 merge, CI green on Python 3.10–3.12
-- **Test suite:** 831 passed, 3 skipped, 87% line coverage (gate: 70%)
+- **Version:** 5.0.0
+- **Last known good:** `main` after the 5.0.0 merge, CI green on Python 3.10–3.12
+- **Test suite:** 876 passed, 3 skipped, 84% line coverage (gate: 70%)
 - **Audience note:** this repository is a pentest-only agent. It refuses to run without an
   authorized `scope.json`. One-command mode can *write* that file, but only after a typed
   attestation that is recorded in it. Do not "fix" that away.
@@ -16,8 +16,9 @@ public description; this file is the internal map.
 ## 1. What the project is, in one paragraph
 
 A local-only autonomous penetration-testing agent with **two execution paths over one guarded
-tool layer**: (a) a model-driven reasoning loop (TDA + EGATS, loopback-only inference), and
-(b) six deterministic playbooks that run the same typed tools with no model at all. Both paths
+tool layer**: (a) an autonomous agent loop driven by the built-in auto agent (or an optional
+loopback-only local model), and (b) six deterministic playbooks that run the same typed tools
+with no model at all. Both paths
 are wrapped in a capability gate, per-call scope validation, an append-only SQLite memory, and a
 structured trace → Markdown report / findings JSON pipeline. A live host inventory tells the agent
 what the machine can actually run; nothing is bundled or simulated.
@@ -33,6 +34,7 @@ what the machine can actually run; nothing is bundled or simulated.
 | 3.2.0 | Offline CVE intelligence: advisory corpus + importers, version ranger, correlator, proof-only payload engine (55 payloads / 14 skills), native `http_probe`, bash toolkit | `intel/`, `payloads/`, `tools/bash/`, `tests/test_intel.py` |
 | 3.3.0 | Repository maturity: handoff/guide/roadmap docs, issue + PR templates, release and CodeQL workflows, doc-hygiene tests | `docs/`, `AGENTS.md`, `CONTRIBUTING.md`, `.github/`, `tests/test_repository.py` |
 | 4.0.0 | One command: `cpf TARGET` / `./run.sh TARGET` derives the scope, attests authorization, picks a profile, runs, and explains the result; SARIF + run manifest artefacts | `onepass.py`, `run.sh`, `tests/test_onepass.py`, `reporting.py` |
+| 5.0.0 | Built-in auto agent (default backend, Ollama removed), live foreground display, faster parallel runs, testssl.sh wrapper rewritten against v3.2.5 | `brain/agent.py`, `live.py`, `brain/llm.py`, `tools/testssl.py`, `tests/test_agent.py`, `tests/test_live.py`, `tests/test_testssl_wrapper.py` |
 
 ## 3. Module map (what lives where, and why)
 
@@ -62,10 +64,12 @@ src/cyberpowerfull/
 ├── brain/
 │   ├── system_prompt.jinja   14 sections, StrictUndefined
 │   ├── prompt.py             PromptContext + renderers (skill_limit applies here)
-│   ├── llm.py                Ollama / llama.cpp / replay clients; loopback-only assert
+│   ├── llm.py                auto agent (default); llama.cpp / replay backends; loopback assert
+│   ├── agent.py              AutoAgent: ladder + escalations + journal, no tokens
 │   ├── tda.py                four-dimension difficulty assessment
 │   ├── attack_tree.py        EGATS scoring and pruning
 │   └── orchestrator.py       RootAgent (delegate|terminate) + WorkerAgent (guarded execute)
+├── live.py               LiveDisplay: spinner TTY / plain fallback, stderr only
 ├── tools/
 │   ├── base.py               BaseTool: validate -> build_argv -> apply_policy -> run -> parse
 │   ├── registry.py           29 tools, allowlists per worker, external agent catalogue
@@ -125,7 +129,7 @@ It is deliberately not a new execution engine. If you change guardrails, they st
    `credential_testing`; `strix`, `pentagi`, `sn1per` need `external_agents`. Unknown/absent
    capability ⇒ `ToolStatus.BLOCKED`, never executed.
 5. **Loopback-only inference.** `assert_local_endpoint()`; no API-key code path. An endpoint
-   passed as a model id (`ollama:http://…`) is rejected with an actionable message.
+   passed as a model id (`llamacpp:http://…`) is rejected with an actionable message.
 6. **Append-only memory.** SQLite triggers reject UPDATE/DELETE; the model only sees
    `MemoryView`.
 7. **No shell.** argv lists only, `shell=False`, sanitized env, spooled bounded output.
