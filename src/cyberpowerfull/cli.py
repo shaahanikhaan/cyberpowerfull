@@ -20,6 +20,7 @@ from cyberpowerfull.brain.prompt import PromptContext, build_system_prompt
 from cyberpowerfull.brain.tda import TaskDifficultyAssessor, TDAInput
 from cyberpowerfull.config import RunConfig
 from cyberpowerfull.errors import CyberpowerfullError, LLMError
+from cyberpowerfull.intel.models import Component
 from cyberpowerfull.inventory import build_toolchain, install_hint
 from cyberpowerfull.knowledge import (
     nmap_script_paths,
@@ -202,6 +203,82 @@ def build_parser() -> argparse.ArgumentParser:
         const="",
         metavar="KIND",
         help="list discovered wordlists (kind: discovery|passwords|dns|fuzzing)",
+    )
+    parser.add_argument(
+        "--intel-status",
+        action="store_true",
+        help="show the local advisory corpus: counts, years, KEV entries, top products",
+    )
+    parser.add_argument(
+        "--import-feed",
+        metavar="PATH",
+        action="append",
+        default=None,
+        help="import an offline advisory feed (NVD 2.0/1.1 JSON or CISA KEV JSON)",
+    )
+    parser.add_argument(
+        "--feed-format",
+        default="auto",
+        choices=["auto", "nvd", "nvd11", "kev", "custom"],
+        help="advisory feed format for --import-feed (default: auto-detect)",
+    )
+    parser.add_argument(
+        "--intel-store",
+        metavar="PATH",
+        default=None,
+        help="advisory SQLite corpus path (default: intel/advisories.sqlite3)",
+    )
+    parser.add_argument(
+        "--correlate",
+        metavar="SPEC",
+        help="correlate observed components: 'product=version;product=version' or a JSON file",
+    )
+    parser.add_argument(
+        "--min-cvss",
+        type=float,
+        default=0.0,
+        metavar="N",
+        help="minimum CVSS for --correlate results (default: 0)",
+    )
+    parser.add_argument(
+        "--payload",
+        dest="payload_skill",
+        metavar="SKILL",
+        help="print proof-only payloads for a skill (sql_injection, xss, ssrf, ssti, ...)",
+    )
+    parser.add_argument(
+        "--payload-ids",
+        default=None,
+        metavar="ID[,ID]",
+        help="restrict --payload to explicit catalogue ids",
+    )
+    parser.add_argument(
+        "--http-probe",
+        metavar="URL",
+        dest="http_probe",
+        help="send one bounded in-scope HTTP request and print the evidence (JSON)",
+    )
+    parser.add_argument(
+        "--probe-method",
+        default="GET",
+        choices=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
+        help="method for --http-probe (default: GET)",
+    )
+    parser.add_argument(
+        "--probe-body",
+        default=None,
+        help="request body for --http-probe",
+    )
+    parser.add_argument(
+        "--probe-marker",
+        default=None,
+        help="marker string to look for in the --http-probe response",
+    )
+    parser.add_argument(
+        "--payload-param",
+        default="q",
+        metavar="NAME",
+        help="parameter name used when rendering query payloads (default: q)",
     )
     parser.add_argument("--json", action="store_true", help="emit the trace JSON on stdout")
     parser.add_argument("--quiet", action="store_true", help="suppress per-step progress lines")
@@ -672,6 +749,149 @@ def _run_playbook(args: argparse.Namespace) -> int:
     return _run_exit_code(result.trace)
 
 
+def _parse_correlate_spec(spec: str) -> list[Component]:
+    """Parse ``product=version;product2=1.2`` or a JSON component list."""
+    candidate = Path(spec)
+    if candidate.exists():
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+        items = payload.get("components", payload) if isinstance(payload, dict) else payload
+        return [Component.model_validate(item) for item in items]
+    items: list[Component] = []
+    for chunk in spec.replace(",", ";").split(";"):
+        entry = chunk.strip()
+        if not entry:
+            continue
+        product, _, version = entry.partition("=")
+        items.append(
+            Component(
+                product=product.strip(),
+                version=version.strip() or None,
+                source="cli",
+                confidence=0.6,
+            )
+        )
+    if not items:
+        raise CyberpowerfullError("--correlate needs at least one product (e.g. 'openssh=9.6p1')")
+    return items
+
+
+def _intel(args: argparse.Namespace) -> int:
+    """Advisory corpus maintenance and offline correlation."""
+    from cyberpowerfull.intel import correlate, import_feed, load_store
+    from cyberpowerfull.intel.service import DEFAULT_INTEL_PATH
+
+    show_status = args.intel_status or (
+        not args.import_feed and args.correlate is None and args.payload_skill is None
+    )
+    if args.payload_skill is not None:
+        from cyberpowerfull.payloads import generate, skills
+
+        if not args.target:
+            raise CyberpowerfullError("--payload requires --target")
+        ids = [item.strip() for item in (args.payload_ids or "").split(",") if item.strip()]
+        rendered = generate(
+            args.payload_skill,
+            target=args.target,
+            param=args.payload_param,
+            ids=ids or None,
+        )
+        if args.json:
+            print(json.dumps([item.model_dump() for item in rendered], indent=2))
+            return 0
+        print(f"{len(rendered)} payload(s) for {args.payload_skill} against {args.target}")
+        for item in rendered:
+            print(f"\n[{item.id}] {item.technique} ({item.context})")
+            request = " ".join(item.curl) if not item.body else f"{item.method} {item.url}"
+            print(f"  request: {request}")
+            if item.body:
+                print(f"  body: {item.body}")
+            for name, value in item.headers.items():
+                print(f"  header {name}: {value}")
+            print(f"  expect: {item.expected_signal}")
+            if item.note:
+                print(f"  note: {item.note}")
+        print(f"\nknown skills: {', '.join(skills())}")
+        return 0
+
+    if args.http_probe is not None:
+        from cyberpowerfull.tools.http_probe import HttpProbeTool
+
+        result = HttpProbeTool().run(
+            {
+                "target": args.http_probe,
+                "method": args.probe_method,
+                "body": args.probe_body,
+                "marker": args.probe_marker,
+            }
+        )
+        payload = {
+            "tool": result.tool,
+            "status": result.status.value,
+            "error": result.error or None,
+            "findings": [item.model_dump(mode="json") for item in result.findings],
+            "observations": result.observations,
+        }
+        if result.stdout:
+            try:
+                payload["response"] = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                payload["stdout"] = result.stdout
+        print(json.dumps(payload, indent=2))
+        return 0 if result.status.value == "ok" else 2
+
+    store = load_store(args.intel_store or DEFAULT_INTEL_PATH)
+    try:
+        if args.import_feed:
+            for path in args.import_feed:
+                summary = import_feed(store, path, args.feed_format)
+                print(f"{summary.summary_line()} <- {path}")
+        if args.correlate is not None:
+            components = _parse_correlate_spec(args.correlate)
+            findings = correlate(
+                components,
+                store=store,
+                target=args.target or "local",
+                min_cvss=args.min_cvss,
+            )
+            if args.json:
+                print(json.dumps([item.model_dump(mode="json") for item in findings], indent=2))
+                return 0
+            if not findings:
+                print(f"no advisory matches for {len(components)} component(s)")
+            else:
+                print(f"{len(findings)} candidate match(es) for {len(components)} component(s)")
+                for finding in findings:
+                    print(
+                        f"  {finding.cve:<16} {finding.severity.value:<9} "
+                        f"conf={finding.confidence:<5} {finding.title[:90]}"
+                    )
+                print("\ncandidates are unverified: confirm with a template check or payload proof")
+            return 0
+        if show_status:
+            stats = store.stats()
+            corpus_path = args.intel_store or DEFAULT_INTEL_PATH
+            if args.json:
+                print(json.dumps(stats, indent=2))
+                return 0
+            print(f"advisory corpus: {corpus_path}")
+            print(f"  advisories : {stats.get('total', 0)}")
+            print(f"  kev entries: {stats.get('kev', 0)}")
+            print(f"  years      : {', '.join(stats.get('years') or []) or '-'}")
+            severities = stats.get("severities") or {}
+            print(
+                "  severities : "
+                + (", ".join(f"{k}={v}" for k, v in severities.items()) if severities else "-")
+            )
+            products = stats.get("products")
+            if products:
+                print(f"  products   : {products} distinct")
+            print("\nimport feeds with --import-feed <file> (NVD 2.0/1.1 or CISA KEV JSON)")
+            return 0
+    finally:
+        store.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -694,6 +914,14 @@ def main(argv: list[str] | None = None) -> int:
             or args.wordlists is not None
         ):
             return _knowledge(args)
+        if (
+            args.intel_status
+            or args.import_feed
+            or args.correlate is not None
+            or args.payload_skill is not None
+            or args.http_probe is not None
+        ):
+            return _intel(args)
         if args.doctor:
             return _doctor(args)
         if args.playbook:

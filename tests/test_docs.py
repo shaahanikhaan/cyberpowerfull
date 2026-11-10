@@ -62,6 +62,9 @@ SKILL_NAMES = [
 
 TOOL_NAMES = [
     "tcp_probe",
+    "http_probe",
+    "payload",
+    "cve_correlate",
     "subfinder",
     "amass",
     "dnsrecon",
@@ -131,7 +134,7 @@ class TestReadme:
 
     def test_badges(self) -> None:
         assert "badge.svg" in README
-        assert "version-3.0.0" in README
+        assert "version-3.2.0" in README
         assert "actions/workflows/ci.yml/badge.svg" in README
 
     @pytest.mark.parametrize("term", HYPE_TERMS)

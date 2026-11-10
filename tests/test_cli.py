@@ -37,7 +37,7 @@ class TestHelpAndListing:
     def test_version(self, capsys) -> None:
         with pytest.raises(SystemExit):
             main(["--version"])
-        assert "cyberpowerfull 3.0.0" in capsys.readouterr().out
+        assert "cyberpowerfull 3.2.0" in capsys.readouterr().out
 
     def test_list_tools(self, capsys) -> None:
         assert main(["--list-tools"]) == 0

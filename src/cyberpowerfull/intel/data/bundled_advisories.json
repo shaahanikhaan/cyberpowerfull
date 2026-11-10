@@ -1,0 +1,318 @@
+{
+  "snapshot": "2026-11-10",
+  "note": "Curated, verifiable advisory snapshot shipped with cyberpowerfull. It is deliberately small: import the current NVD and CISA KEV feeds with tools/bash/cve_hunt.sh --import-feed for full-year coverage (including newly published 2025-2026 CVEs). Every range below states the affected interval; verify against the vendor advisory before reporting.",
+  "advisories": [
+    {
+      "id": "CVE-2021-44228",
+      "source": "bundled",
+      "title": "Log4j2 JNDI features remote code execution (Log4Shell)",
+      "description": "JNDI lookup expansion in Log4j2 allows remote code execution when message lookups are enabled.",
+      "severity": "critical",
+      "cvss": 10.0,
+      "published": "2021-12-10",
+      "cwe": "CWE-502",
+      "vendor": "apache",
+      "product": "log4j",
+      "ranges": [
+        {
+          "introduced": "2.0.0",
+          "fixed": "2.15.0"
+        },
+        {
+          "introduced": "2.0-beta9",
+          "fixed": "2.0.0"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2021-45046",
+      "source": "bundled",
+      "title": "Log4j2 incomplete fix for JNDI lookup (2.15.0)",
+      "description": "The 2.15.0 fix for Log4Shell was incomplete; certain lookup patterns still allow code execution or denial of service.",
+      "severity": "critical",
+      "cvss": 9.0,
+      "published": "2021-12-14",
+      "cwe": "CWE-502",
+      "vendor": "apache",
+      "product": "log4j",
+      "ranges": [
+        {
+          "introduced": "2.15.0",
+          "fixed": "2.16.0"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2021-45046"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2021-41773",
+      "source": "bundled",
+      "title": "Apache HTTP Server 2.4.49 path traversal and file disclosure",
+      "description": "A flaw in path normalisation allows traversal outside the document root, and may allow remote code execution when mod_cgi is enabled.",
+      "severity": "high",
+      "cvss": 7.5,
+      "published": "2021-10-05",
+      "cwe": "CWE-22",
+      "vendor": "apache",
+      "product": "http_server",
+      "ranges": [
+        {
+          "exact": "2.4.49"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2021-41773"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2021-42013",
+      "source": "bundled",
+      "title": "Apache HTTP Server 2.4.50 path traversal and RCE",
+      "description": "Incomplete fix for CVE-2021-41773: traversal sequences still bypass normalisation, enabling file disclosure and possible code execution.",
+      "severity": "critical",
+      "cvss": 9.8,
+      "published": "2021-10-07",
+      "cwe": "CWE-22",
+      "vendor": "apache",
+      "product": "http_server",
+      "ranges": [
+        {
+          "exact": "2.4.50"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2021-42013"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2022-22965",
+      "source": "bundled",
+      "title": "Spring Framework data binding remote code execution (Spring4Shell)",
+      "description": "Data binding on JDK 9+ with Spring MVC or WebFlux can allow an attacker to modify class loader state and write a web shell.",
+      "severity": "critical",
+      "cvss": 9.8,
+      "published": "2022-04-01",
+      "cwe": "CWE-94",
+      "vendor": "vmware",
+      "product": "spring_framework",
+      "ranges": [
+        {
+          "introduced": "0",
+          "fixed": "5.3.18"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2022-22965"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2022-1388",
+      "source": "bundled",
+      "title": "F5 BIG-IP iControl REST authentication bypass",
+      "description": "Undisclosed requests to the iControl REST interface may bypass authentication and allow command execution.",
+      "severity": "critical",
+      "cvss": 9.8,
+      "published": "2022-05-05",
+      "cwe": "CWE-306",
+      "vendor": "f5",
+      "product": "big_ip",
+      "ranges": [
+        {
+          "introduced": "16.1.0",
+          "fixed": "16.1.3"
+        },
+        {
+          "introduced": "15.1.0",
+          "fixed": "15.1.6"
+        },
+        {
+          "introduced": "14.1.0",
+          "fixed": "14.1.5"
+        },
+        {
+          "introduced": "13.1.0",
+          "fixed": "13.1.4"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2022-1388"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2023-34362",
+      "source": "bundled",
+      "title": "MOVEit Transfer SQL injection leading to data theft",
+      "description": "SQL injection in the MOVEit Transfer web application allowed mass exploitation and data exfiltration in 2023.",
+      "severity": "critical",
+      "cvss": 9.8,
+      "published": "2023-06-02",
+      "cwe": "CWE-89",
+      "vendor": "progress",
+      "product": "moveit_transfer",
+      "ranges": [],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2023-34362"
+      ],
+      "kev": true,
+      "exploited_in_wild": true,
+      "note": "Product-level match: confirm the installed MOVEit version against the vendor advisory before reporting."
+    },
+    {
+      "id": "CVE-2024-6387",
+      "source": "bundled",
+      "title": "OpenSSH signal handler race condition (regreSSHion)",
+      "description": "A race condition in sshd's signal handling may allow unauthenticated remote code execution as root on glibc-based Linux.",
+      "severity": "high",
+      "cvss": 8.1,
+      "published": "2024-07-01",
+      "cwe": "CWE-364",
+      "vendor": "openbsd",
+      "product": "openssh",
+      "ranges": [
+        {
+          "introduced": "8.5p1",
+          "fixed": "9.8p1"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-6387"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2024-3094",
+      "source": "bundled",
+      "title": "XZ Utils backdoor in liblzma",
+      "description": "Malicious code in xz/liblzma 5.6.0 and 5.6.1 hooks the OpenSSH build and allows authentication bypass via a crafted certificate.",
+      "severity": "critical",
+      "cvss": 10.0,
+      "published": "2024-03-29",
+      "cwe": "CWE-506",
+      "vendor": "tukaani",
+      "product": "xz_utils",
+      "ranges": [
+        {
+          "exact": "5.6.0"
+        },
+        {
+          "exact": "5.6.1"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-3094"
+      ],
+      "kev": false,
+      "exploited_in_wild": false
+    },
+    {
+      "id": "CVE-2024-4577",
+      "source": "bundled",
+      "title": "PHP CGI argument injection on Windows",
+      "description": "Character conversion on Windows code pages allows argument injection in PHP CGI, leading to remote code execution.",
+      "severity": "critical",
+      "cvss": 9.8,
+      "published": "2024-06-07",
+      "cwe": "CWE-78",
+      "vendor": "php",
+      "product": "php",
+      "ranges": [
+        {
+          "introduced": "8.1.0",
+          "fixed": "8.1.29"
+        },
+        {
+          "introduced": "8.2.0",
+          "fixed": "8.2.20"
+        },
+        {
+          "introduced": "8.3.0",
+          "fixed": "8.3.8"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-4577"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2024-3400",
+      "source": "bundled",
+      "title": "PAN-OS GlobalProtect command injection",
+      "description": "Unauthenticated command injection in the GlobalProtect feature of PAN-OS allows arbitrary command execution as root.",
+      "severity": "critical",
+      "cvss": 10.0,
+      "published": "2024-04-12",
+      "cwe": "CWE-78",
+      "vendor": "paloaltonetworks",
+      "product": "pan_os",
+      "ranges": [
+        {
+          "introduced": "10.2.0",
+          "fixed": "10.2.9"
+        },
+        {
+          "introduced": "11.0.0",
+          "fixed": "11.0.4"
+        },
+        {
+          "introduced": "11.1.0",
+          "fixed": "11.1.2"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-3400"
+      ],
+      "kev": true,
+      "exploited_in_wild": true
+    },
+    {
+      "id": "CVE-2020-1938",
+      "source": "bundled",
+      "title": "Apache Tomcat AJP file inclusion (Ghostcat)",
+      "description": "The AJP connector allows file read and, with file upload, potential code execution when exposed to untrusted networks.",
+      "severity": "critical",
+      "cvss": 9.8,
+      "published": "2020-02-24",
+      "cwe": "CWE-269",
+      "vendor": "apache",
+      "product": "tomcat",
+      "ranges": [
+        {
+          "introduced": "9.0.0",
+          "fixed": "9.0.31"
+        },
+        {
+          "introduced": "8.5.0",
+          "fixed": "8.5.51"
+        },
+        {
+          "introduced": "7.0.0",
+          "last_affected": "7.0.100"
+        }
+      ],
+      "references": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2020-1938"
+      ],
+      "kev": false,
+      "exploited_in_wild": true
+    }
+  ]
+}
