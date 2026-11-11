@@ -110,6 +110,12 @@ TOOL_NAMES = [
     "theharvester",
     "gospider",
     "shuffledns",
+    "sslyze",
+    "dirsearch",
+    "enum4linux",
+    "gau",
+    "exiftool",
+    "sherlock",
 ]
 
 

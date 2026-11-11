@@ -206,6 +206,10 @@ class BaseTool(ABC):
     required_capability: ClassVar[Capability | None] = None
     scans_local_paths: ClassVar[bool] = False
     cloud_posture: ClassVar[bool] = False
+    #: True when ``target`` is a passive-lookup identifier (e.g. a username),
+    #: not a network or filesystem asset: host-scope containment does not
+    #: apply, and authorization comes from ``allow_passive_sources`` gates.
+    passive_lookup: ClassVar[bool] = False
     #: True for wrappers that drive another autonomous system (Strix, PentAGI,
     #: Sn1per). They inherit the engagement scope but need ``external_agents``.
     external: ClassVar[bool] = False

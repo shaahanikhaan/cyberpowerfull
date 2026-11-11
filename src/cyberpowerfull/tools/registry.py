@@ -10,11 +10,15 @@ from cyberpowerfull.tools.arjun import ArjunTool
 from cyberpowerfull.tools.base import BaseTool
 from cyberpowerfull.tools.cve_correlate import CveCorrelateTool
 from cyberpowerfull.tools.dalfox import DalfoxTool
+from cyberpowerfull.tools.dirsearch import DirsearchTool
 from cyberpowerfull.tools.dnsenum import DnsenumTool
 from cyberpowerfull.tools.dnsrecon import DnsreconTool
 from cyberpowerfull.tools.dnsx import DnsxTool
+from cyberpowerfull.tools.enum4linux import Enum4linuxTool
+from cyberpowerfull.tools.exiftool import ExiftoolTool
 from cyberpowerfull.tools.feroxbuster import FeroxbusterTool
 from cyberpowerfull.tools.ffuf import FfufTool
+from cyberpowerfull.tools.gau import GauTool
 from cyberpowerfull.tools.gitleaks import GitleaksTool
 from cyberpowerfull.tools.gobuster import GobusterTool
 from cyberpowerfull.tools.gospider import GospiderTool
@@ -37,11 +41,13 @@ from cyberpowerfull.tools.prowler import ProwlerTool
 from cyberpowerfull.tools.rustscan import RustscanTool
 from cyberpowerfull.tools.searchsploit import SearchsploitTool
 from cyberpowerfull.tools.semgrep import SemgrepTool
+from cyberpowerfull.tools.sherlock import SherlockTool
 from cyberpowerfull.tools.shuffledns import ShufflednsTool
 from cyberpowerfull.tools.sn1per import Sn1perTool
 from cyberpowerfull.tools.sqlmap import SqlmapTool
 from cyberpowerfull.tools.ssh_audit import SshAuditTool
 from cyberpowerfull.tools.sslscan import SslscanTool
+from cyberpowerfull.tools.sslyze import SslyzeTool
 from cyberpowerfull.tools.strix import StrixTool
 from cyberpowerfull.tools.subfinder import SubfinderTool
 from cyberpowerfull.tools.tcp_probe import TcpProbeTool
@@ -71,9 +77,12 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     ShufflednsTool,
     UncoverTool,
     TheharvesterTool,
+    GauTool,
+    SherlockTool,
     HttpxTool,
     KatanaTool,
     GospiderTool,
+    ExiftoolTool,
     KubebenchTool,
     KubescapeTool,
     Wafw00fTool,
@@ -82,6 +91,7 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     MasscanTool,
     NaabuTool,
     NetexecTool,
+    Enum4linuxTool,
     RustscanTool,
     MetasploitTool,
     WhatwebTool,
@@ -91,12 +101,14 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     GobusterTool,
     FeroxbusterTool,
     ArjunTool,
+    DirsearchTool,
     TestsslTool,
     TrivyTool,
     TrufflehogTool,
     TlsxTool,
     SshAuditTool,
     SslscanTool,
+    SslyzeTool,
     WpscanTool,
     ZapTool,
     # validation
