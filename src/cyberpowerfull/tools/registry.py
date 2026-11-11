@@ -11,31 +11,44 @@ from cyberpowerfull.tools.base import BaseTool
 from cyberpowerfull.tools.cve_correlate import CveCorrelateTool
 from cyberpowerfull.tools.dalfox import DalfoxTool
 from cyberpowerfull.tools.dnsrecon import DnsreconTool
+from cyberpowerfull.tools.dnsx import DnsxTool
 from cyberpowerfull.tools.feroxbuster import FeroxbusterTool
 from cyberpowerfull.tools.ffuf import FfufTool
+from cyberpowerfull.tools.gitleaks import GitleaksTool
 from cyberpowerfull.tools.gobuster import GobusterTool
 from cyberpowerfull.tools.http_probe import HttpProbeTool
 from cyberpowerfull.tools.httpx_probe import HttpxTool
 from cyberpowerfull.tools.hydra import HydraTool
 from cyberpowerfull.tools.katana import KatanaTool
+from cyberpowerfull.tools.kubebench import KubebenchTool
+from cyberpowerfull.tools.kubescape import KubescapeTool
 from cyberpowerfull.tools.masscan import MasscanTool
 from cyberpowerfull.tools.metasploit import MetasploitTool
 from cyberpowerfull.tools.naabu import NaabuTool
+from cyberpowerfull.tools.netexec import NetexecTool
 from cyberpowerfull.tools.nikto import NiktoTool
 from cyberpowerfull.tools.nmap import NmapTool
 from cyberpowerfull.tools.nuclei import NucleiTool
 from cyberpowerfull.tools.payload import PayloadTool
 from cyberpowerfull.tools.pentagi import PentagiTool
+from cyberpowerfull.tools.prowler import ProwlerTool
+from cyberpowerfull.tools.rustscan import RustscanTool
 from cyberpowerfull.tools.searchsploit import SearchsploitTool
+from cyberpowerfull.tools.semgrep import SemgrepTool
 from cyberpowerfull.tools.sn1per import Sn1perTool
 from cyberpowerfull.tools.sqlmap import SqlmapTool
 from cyberpowerfull.tools.strix import StrixTool
 from cyberpowerfull.tools.subfinder import SubfinderTool
 from cyberpowerfull.tools.tcp_probe import TcpProbeTool
 from cyberpowerfull.tools.testssl import TestsslTool
+from cyberpowerfull.tools.tlsx import TlsxTool
+from cyberpowerfull.tools.trivy import TrivyTool
+from cyberpowerfull.tools.trufflehog import TrufflehogTool
+from cyberpowerfull.tools.uncover import UncoverTool
 from cyberpowerfull.tools.wafw00f import Wafw00fTool
 from cyberpowerfull.tools.whatweb import WhatwebTool
 from cyberpowerfull.tools.wpscan import WpscanTool
+from cyberpowerfull.tools.zaproxy import ZapTool
 
 _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     # native
@@ -47,24 +60,36 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     SubfinderTool,
     AmassTool,
     DnsreconTool,
+    DnsxTool,
+    UncoverTool,
     HttpxTool,
     KatanaTool,
+    KubebenchTool,
+    KubescapeTool,
     Wafw00fTool,
     # scanning
     NmapTool,
     MasscanTool,
     NaabuTool,
+    NetexecTool,
+    RustscanTool,
     MetasploitTool,
     WhatwebTool,
     NiktoTool,
     FfufTool,
+    GitleaksTool,
     GobusterTool,
     FeroxbusterTool,
     ArjunTool,
     TestsslTool,
+    TrivyTool,
+    TrufflehogTool,
+    TlsxTool,
     WpscanTool,
+    ZapTool,
     # validation
     NucleiTool,
+    SemgrepTool,
     SqlmapTool,
     DalfoxTool,
     SearchsploitTool,
@@ -72,6 +97,7 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     # external autonomous systems
     StrixTool,
     PentagiTool,
+    ProwlerTool,
     Sn1perTool,
 )
 

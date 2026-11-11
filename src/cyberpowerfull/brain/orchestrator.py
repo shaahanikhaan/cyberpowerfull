@@ -41,6 +41,7 @@ from cyberpowerfull.inventory import NUCLEI_TEMPLATE_ROOTS, WORDLIST_ROOTS, buil
 from cyberpowerfull.memory.store import MemoryStore
 from cyberpowerfull.models import (
     BudgetState,
+    Capability,
     Decision,
     Finding,
     Phase,
@@ -174,6 +175,31 @@ def _library_file(value: str) -> bool:
     return False
 
 
+def _allowed_path(value: str, allowed: list[str]) -> bool:
+    """Allow only a path inside a directory the operator explicitly listed."""
+    try:
+        candidate = Path(value).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    for entry in allowed:
+        try:
+            root = Path(entry).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if candidate == root or root in candidate.parents:
+            return True
+    return False
+
+
+def _finding_inside_allowed_paths(finding, allowed: list[str]) -> bool:
+    """Keep a code finding only when its file stays inside the granted roots."""
+    endpoint = finding.endpoint or ""
+    file_part = endpoint.rsplit(":", 1)[0] if ":" in endpoint else endpoint
+    if not file_part:
+        return _allowed_path(finding.target, allowed)
+    return _allowed_path(file_part, allowed) and _allowed_path(finding.target, allowed)
+
+
 def _allowed_file(value: str, allowed: list[str]) -> bool:
     """Allow only an exact existing file explicitly named by the operator."""
     try:
@@ -284,15 +310,39 @@ class WorkerAgent:
                 status=ToolStatus.ERROR,
                 error="delegation args must include a string 'target'",
             )
-        try:
-            self.scope.require(target)
-            validated = tool.validate(request.args)
-            # Validate the actual canonical target the wrapper will receive too.
-            self.scope.require(validated.target)
-        except ScopeViolation as exc:
-            return ToolResult(tool=tool.name, status=ToolStatus.BLOCKED, error=str(exc))
-        except InvalidToolArguments as exc:
-            return ToolResult(tool=tool.name, status=ToolStatus.ERROR, error=str(exc))
+        if getattr(tool, "cloud_posture", False):
+            # Cloud posture tools scan whatever the ambient credentials can
+            # see: the credential IS the scope. Presence is checked by the
+            # wrapper; here we only validate arguments.
+            try:
+                validated = tool.validate(request.args)
+            except InvalidToolArguments as exc:
+                return ToolResult(tool=tool.name, status=ToolStatus.ERROR, error=str(exc))
+        elif getattr(tool, "scans_local_paths", False):
+            # Filesystem targets are contained by allowed_paths, not host scope.
+            if not _allowed_path(target, self.scope.allowed_paths):
+                return ToolResult(
+                    tool=tool.name,
+                    status=ToolStatus.BLOCKED,
+                    error=(
+                        f"path {target!r} is not listed in scope.allowed_paths; "
+                        "add the repository root there (cpf init does this for you)"
+                    ),
+                )
+            try:
+                validated = tool.validate(request.args)
+            except InvalidToolArguments as exc:
+                return ToolResult(tool=tool.name, status=ToolStatus.ERROR, error=str(exc))
+        else:
+            try:
+                self.scope.require(target)
+                validated = tool.validate(request.args)
+                # Validate the actual canonical target the wrapper will receive too.
+                self.scope.require(validated.target)
+            except ScopeViolation as exc:
+                return ToolResult(tool=tool.name, status=ToolStatus.BLOCKED, error=str(exc))
+            except InvalidToolArguments as exc:
+                return ToolResult(tool=tool.name, status=ToolStatus.ERROR, error=str(exc))
 
         if tool.name == "subfinder" and not self.scope.allow_passive_sources:
             return ToolResult(
@@ -303,6 +353,14 @@ class WorkerAgent:
                     "set allow_passive_sources in scope"
                 ),
             )
+        if tool.name == "uncover" and not self.scope.allow_passive_sources:
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    "uncover queries external search engines; " "set allow_passive_sources in scope"
+                ),
+            )
         if tool.name == "ffuf" and not (
             _allowed_file(str(request.args.get("wordlist", "")), self.scope.allowed_wordlists)
             or _library_file(str(request.args.get("wordlist", "")))
@@ -311,6 +369,39 @@ class WorkerAgent:
                 tool=tool.name,
                 status=ToolStatus.BLOCKED,
                 error="ffuf wordlist must be an existing file listed in scope.allowed_wordlists",
+            )
+        if (
+            tool.name == "dnsx"
+            and getattr(validated, "bruteforce", False)
+            and not (
+                _allowed_file(str(request.args.get("wordlist", "")), self.scope.allowed_wordlists)
+                or _library_file(str(request.args.get("wordlist", "")))
+            )
+        ):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error="dnsx wordlist must be an existing file listed in scope.allowed_wordlists",
+            )
+        if (
+            tool.name == "kubescape"
+            and request.args.get("manifests")
+            and not _allowed_path(str(request.args.get("manifests")), self.scope.allowed_paths)
+        ):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error="kubescape manifests must live inside scope.allowed_paths",
+            )
+        if (
+            tool.name == "zap"
+            and bool(request.args.get("active"))
+            and not self.scope.allows(Capability.AGGRESSIVE)
+        ):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error="zap active=True attacks the target: grant the 'aggressive' capability",
             )
         if tool.name == "nuclei":
             templates = request.args.get("templates") or []
@@ -334,17 +425,31 @@ class WorkerAgent:
             policy = replace(policy, timeout_s=min(policy.timeout_s, max(timeout_s, 0.001)))
         # The native TCP probe performs its own pinned DNS check; third-party
         # scanners get a best-effort preflight, not a substitute for egress rules.
-        if not dry_run and tool.name not in {"tcp_probe", "subfinder"}:
+        if (
+            not dry_run
+            and tool.name not in {"tcp_probe", "subfinder"}
+            and not getattr(tool, "scans_local_paths", False)
+            and not getattr(tool, "cloud_posture", False)
+        ):
             dns_error = _dns_exclusion_error(validated.target, policy.excluded_networks)
             if dns_error:
                 return ToolResult(tool=tool.name, status=ToolStatus.BLOCKED, error=dns_error)
         result = tool.run(request.args, dry_run=dry_run, policy=policy)
-        allowed = [
-            finding
-            for finding in result.findings
-            if self.scope.authorizes(finding.target)
-            and (finding.endpoint is None or self.scope.authorizes(finding.endpoint))
-        ]
+        if getattr(tool, "cloud_posture", False):
+            allowed = list(result.findings)
+        elif getattr(tool, "scans_local_paths", False):
+            allowed = [
+                finding
+                for finding in result.findings
+                if _finding_inside_allowed_paths(finding, self.scope.allowed_paths)
+            ]
+        else:
+            allowed = [
+                finding
+                for finding in result.findings
+                if self.scope.authorizes(finding.target)
+                and (finding.endpoint is None or self.scope.authorizes(finding.endpoint))
+            ]
         suppressed = len(result.findings) - len(allowed)
         if suppressed:
             result = result.model_copy(

@@ -361,3 +361,105 @@ def test_tree_injection(scope) -> None:
     )
     result = orchestrator.run()
     assert result.trace.attack_tree["total"] == 2
+
+
+class TestV60DelegationGates:
+    def test_worker_blocks_uncover_without_passive_sources(self, scope) -> None:
+        from cyberpowerfull.tools.uncover import UncoverTool
+
+        worker = WorkerAgent("recon", scope=scope, tools={"uncover": UncoverTool()})
+        result = worker.execute(
+            DelegationRequest(agent="recon", tool="uncover", args={"target": "lab.test"})
+        )
+        assert result.status is ToolStatus.BLOCKED
+        assert "external search engines" in (result.error or "")
+
+    def test_worker_blocks_dnsx_bruteforce_without_allowlisted_wordlist(self, scope) -> None:
+        from cyberpowerfull.tools.dnsx import DnsxTool
+
+        worker = WorkerAgent("recon", scope=scope, tools={"dnsx": DnsxTool()})
+        result = worker.execute(
+            DelegationRequest(
+                agent="recon",
+                tool="dnsx",
+                args={"target": "lab.test", "bruteforce": True, "wordlist": "/tmp/evil.txt"},
+            )
+        )
+        assert result.status is ToolStatus.BLOCKED
+        assert "allowed_wordlists" in (result.error or "")
+
+
+class TestCodePathGates:
+    def test_worker_blocks_code_tool_outside_allowed_paths(self, scope, tmp_path) -> None:
+        from cyberpowerfull.tools.gitleaks import GitleaksTool
+
+        worker = WorkerAgent("scan", scope=scope, tools={"gitleaks": GitleaksTool()})
+        result = worker.execute(
+            DelegationRequest(agent="scan", tool="gitleaks", args={"target": str(tmp_path)})
+        )
+        assert result.status is ToolStatus.BLOCKED
+        assert "allowed_paths" in (result.error or "")
+
+    def test_worker_allows_listed_repo_root(self, scope, tmp_path) -> None:
+        from cyberpowerfull.tools.gitleaks import GitleaksTool
+
+        granted = scope.model_copy(update={"allowed_paths": [str(tmp_path)]})
+        worker = WorkerAgent("scan", scope=granted, tools={"gitleaks": GitleaksTool()})
+        result = worker.execute(
+            DelegationRequest(agent="scan", tool="gitleaks", args={"target": str(tmp_path)})
+        )
+        # gitleaks is not installed in CI: MISSING proves the path gate passed.
+        assert result.status is ToolStatus.MISSING
+
+    def test_worker_blocks_sibling_of_allowed_root(self, scope, tmp_path) -> None:
+        from cyberpowerfull.tools.trivy import TrivyTool
+
+        granted = scope.model_copy(update={"allowed_paths": [str(tmp_path / "repo")]})
+        (tmp_path / "repo").mkdir()
+        worker = WorkerAgent("scan", scope=granted, tools={"trivy": TrivyTool()})
+        result = worker.execute(
+            DelegationRequest(agent="scan", tool="trivy", args={"target": str(tmp_path)})
+        )
+        assert result.status is ToolStatus.BLOCKED
+
+
+class TestZapActiveGate:
+    def test_worker_blocks_active_zap_without_capability(self, scope) -> None:
+        from cyberpowerfull.tools.zaproxy import ZapTool
+
+        worker = WorkerAgent("scan", scope=scope, tools={"zap": ZapTool()})
+        result = worker.execute(
+            DelegationRequest(
+                agent="scan",
+                tool="zap",
+                args={"target": "http://127.0.0.1/", "active": True},
+            )
+        )
+        assert result.status is ToolStatus.BLOCKED
+        assert "aggressive" in (result.error or "")
+
+    def test_worker_passes_passive_zap_to_binary_check(self, scope) -> None:
+        from cyberpowerfull.tools.zaproxy import ZapTool
+
+        worker = WorkerAgent("scan", scope=scope, tools={"zap": ZapTool()})
+        result = worker.execute(
+            DelegationRequest(agent="scan", tool="zap", args={"target": "http://127.0.0.1/"})
+        )
+        # zap.sh is not installed in CI: MISSING proves the gate passed.
+        assert result.status is ToolStatus.MISSING
+
+
+class TestKubescapeManifestGate:
+    def test_worker_blocks_manifests_outside_allowed_paths(self, scope, tmp_path) -> None:
+        from cyberpowerfull.tools.kubescape import KubescapeTool
+
+        worker = WorkerAgent("scan", scope=scope, tools={"kubescape": KubescapeTool()})
+        result = worker.execute(
+            DelegationRequest(
+                agent="scan",
+                tool="kubescape",
+                args={"target": "127.0.0.1", "manifests": str(tmp_path)},
+            )
+        )
+        assert result.status is ToolStatus.BLOCKED
+        assert "allowed_paths" in (result.error or "")

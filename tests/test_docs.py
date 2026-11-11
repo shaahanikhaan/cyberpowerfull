@@ -90,6 +90,20 @@ TOOL_NAMES = [
     "strix",
     "pentagi",
     "sn1per",
+    "dnsx",
+    "tlsx",
+    "rustscan",
+    "uncover",
+    "netexec",
+    "metasploit",
+    "gitleaks",
+    "trufflehog",
+    "semgrep",
+    "trivy",
+    "zap",
+    "kubebench",
+    "kubescape",
+    "prowler",
 ]
 
 
@@ -134,7 +148,7 @@ class TestReadme:
 
     def test_badges(self) -> None:
         assert "badge.svg" in README
-        assert "version-5.1.0" in README
+        assert "version-5.2.0" in README
         assert "actions/workflows/ci.yml/badge.svg" in README
 
     @pytest.mark.parametrize("term", HYPE_TERMS)

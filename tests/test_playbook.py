@@ -134,7 +134,16 @@ def _empty_toolchain():
 
 class TestCatalogue:
     def test_playbooks_are_registered(self) -> None:
-        assert set(playbook_names()) == {"recon", "web", "network", "stealth", "api", "full"}
+        assert set(playbook_names()) == {
+            "recon",
+            "web",
+            "network",
+            "stealth",
+            "api",
+            "code",
+            "cloud",
+            "full",
+        }
         assert all(row["steps"] > 0 for row in describe_playbooks())
 
     def test_unknown_playbook_exits_8(self) -> None:
@@ -273,6 +282,28 @@ class TestRunner:
         assert masscan.calls == []
         assert any("requires capability 'aggressive'" in line for line in result.skipped)
 
+    def test_passive_sources_gate_skips_uncover(self, memory) -> None:
+        restricted = Scope(
+            engagement="x", authorized=True, targets=["127.0.0.1"], capabilities=["aggressive"]
+        )
+        uncover = StubTool(name="uncover", phase=Phase.RECON)
+        result = build(restricted, memory, {"uncover": uncover}).run(get_playbook("recon"))
+        assert uncover.calls == []
+        assert any("passive sources" in line for line in result.skipped)
+
+    def test_passive_sources_grant_lets_uncover_run(self, memory) -> None:
+        allowed = Scope(
+            engagement="x",
+            authorized=True,
+            targets=["127.0.0.1"],
+            capabilities=["aggressive"],
+            allow_passive_sources=True,
+        )
+        uncover = StubTool([make_finding()], name="uncover", phase=Phase.RECON)
+        build(allowed, memory, {"uncover": uncover}).run(get_playbook("recon"))
+        assert uncover.calls != []
+        assert "recon-uncover" in [step.id for step in get_playbook("recon").steps]
+
     def test_capability_grant_lets_aggressive_tool_run(self, scope, memory) -> None:
         masscan = StubTool(
             [
@@ -401,3 +432,28 @@ class TestRunner:
             "precondition not met" in line or "binary not installed" in line
             for line in result.skipped
         )
+
+
+class TestCodeEndpointAbsorb:
+    def test_file_line_endpoints_are_not_ports(self) -> None:
+        from cyberpowerfull.playbook import Facts
+
+        facts = Facts(target="/repo")
+        facts.absorb(
+            "semgrep",
+            [
+                make_finding(
+                    endpoint="/repo/app/views.py:42",
+                    evidence="semgrep command-injection CWE-78",
+                )
+            ],
+            ["semgrep: 1 finding(s)"],
+        )
+        assert facts.open_ports == {}
+
+    def test_host_port_endpoints_still_register(self) -> None:
+        from cyberpowerfull.playbook import Facts
+
+        facts = Facts(target="127.0.0.1")
+        facts.absorb("nmap", [make_finding(endpoint="127.0.0.1:8080")], [])
+        assert 8080 in facts.open_ports

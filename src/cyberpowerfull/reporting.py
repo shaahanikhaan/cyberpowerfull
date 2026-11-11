@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 
+from cyberpowerfull.explain import explain_finding
 from cyberpowerfull.models import Finding, Severity
 from cyberpowerfull.storage import write_private_text
 from cyberpowerfull.trace import Trace, summarize_trace
@@ -110,6 +111,7 @@ def render_markdown(trace: Trace) -> str:
                     f"cvss: {finding.cvss if finding.cvss is not None else 'n/a'}",
                     f"- evidence: {_inline(finding.evidence or 'none recorded')}",
                     f"- remediation: {_markdown_text(finding.remediation or 'not specified')}",
+                    f"- what this means: {_markdown_text(explain_finding(finding))}",
                 ]
             )
 

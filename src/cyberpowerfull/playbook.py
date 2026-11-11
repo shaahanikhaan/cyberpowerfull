@@ -15,6 +15,7 @@ agent. A playbook cannot bypass a guardrail.
 
 from __future__ import annotations
 
+import difflib
 import json
 import time
 from collections.abc import Callable
@@ -125,8 +126,10 @@ class Facts:
             if endpoint.startswith(("http://", "https://")):
                 self.add_url(endpoint)
             elif ":" in endpoint and endpoint.count(":") == 1:
-                _host, _, port_text = endpoint.rpartition(":")
-                if port_text.isdigit():
+                host_part, _, port_text = endpoint.rpartition(":")
+                # Code findings use file:line endpoints (/repo/app.py:42): those
+                # are line numbers, never ports.
+                if "/" not in host_part and port_text.isdigit():
                     self.add_port(int(port_text))
             if finding.title.startswith("Subdomain discovered"):
                 self.add_subdomain(endpoint or finding.title.split(":")[-1].strip())
@@ -186,6 +189,7 @@ class PlaybookStep:
     purpose: str
     optional: bool = True
     phase: Phase | None = None
+    requires_passive_sources: bool = False
 
 
 @dataclass(frozen=True)
@@ -382,6 +386,82 @@ def _nuclei_api(args: Facts) -> dict[str, Any]:
     }
 
 
+def _dnsx(args: Facts) -> dict[str, Any] | None:
+    return {"target": args.domain} if args.domain else None
+
+
+def _dnsx_bruteforce(args: Facts) -> dict[str, Any] | None:
+    wordlist = args.wordlists.get("dns")
+    if not args.domain or not wordlist:
+        return None
+    return {"target": args.domain, "bruteforce": True, "wordlist": wordlist}
+
+
+def _uncover(args: Facts) -> dict[str, Any]:
+    return {"target": args.domain or args.target}
+
+
+def _rustscan(args: Facts) -> dict[str, Any]:
+    return {"target": args.target, "top_1000": True}
+
+
+def _tlsx(args: Facts) -> dict[str, Any]:
+    return {"target": args.target, "ports": args.tls_ports() or args.web_ports()}
+
+
+def _nuclei_dast(args: Facts) -> dict[str, Any]:
+    # DAST crawls and fuzzes by itself, so gentler budgets than template scans.
+    # The fuzz-scope pattern defaults to the validated target host only: builders
+    # never see the scope, and findings are not scope-checked.
+    return {
+        "target": args.primary_url,
+        "severity": ["low", "medium", "high", "critical"],
+        "rate_limit": 10,
+        "concurrency": 5,
+        "dast": True,
+    }
+
+
+def _netexec(args: Facts) -> dict[str, Any] | None:
+    if 445 not in args.open_ports:
+        return None
+    return {"target": args.target, "enumerate": ["shares", "pass_pol"]}
+
+
+def _code_path(args: Facts) -> dict[str, Any]:
+    return {"target": args.target}
+
+
+def _code_semgrep(args: Facts) -> dict[str, Any]:
+    return {"target": args.target, "config": "p/default"}
+
+
+def _code_trivy(args: Facts) -> dict[str, Any]:
+    return {"target": args.target, "scanners": ["vuln", "secret", "misconfig"]}
+
+
+def _nuclei_kev(args: Facts) -> dict[str, Any]:
+    return {
+        "target": args.primary_url,
+        "severity": ["high", "critical"],
+        "kev_only": True,
+        "rate_limit": 15,
+        "concurrency": 8,
+    }
+
+
+def _zap(args: Facts) -> dict[str, Any]:
+    return {"target": args.primary_url}
+
+
+def _cloud_target(args: Facts) -> dict[str, Any]:
+    return {"target": args.target}
+
+
+def _cloud_prowler(args: Facts) -> dict[str, Any]:
+    return {"target": args.target, "provider": "aws"}
+
+
 def _gobuster(args: Facts) -> dict[str, Any] | None:
     if not args.wordlists.get("discovery"):
         return None
@@ -452,12 +532,22 @@ _RECON_STEPS: tuple[PlaybookStep, ...] = (
     PlaybookStep("recon-tcp", "tcp_probe", 0, _tcp_probe, "native TCP connect sweep"),
     PlaybookStep("recon-subfinder", "subfinder", 1, _subfinder, "passive subdomain enumeration"),
     PlaybookStep("recon-amass", "amass", 1, _amass, "secondary passive enumeration"),
+    PlaybookStep(
+        "recon-uncover",
+        "uncover",
+        1,
+        _uncover,
+        "search-engine exposure lookup",
+        requires_passive_sources=True,
+    ),
     PlaybookStep("recon-nmap", "nmap", 1, _nmap_top, "top-1000 TCP sweep with service detection"),
     PlaybookStep("recon-http", "httpx", 2, _httpx_tls, "confirm HTTPS endpoints"),
     PlaybookStep("recon-http-plain", "httpx", 2, _httpx_plain, "confirm HTTP endpoints"),
     PlaybookStep("recon-waf", "wafw00f", 2, _wafw00f, "fingerprint the WAF"),
     PlaybookStep("recon-whatweb", "whatweb", 2, _whatweb, "technology fingerprint"),
     PlaybookStep("recon-dns", "dnsrecon", 2, _dnsrecon, "DNS records and AXFR check"),
+    PlaybookStep("recon-dnsx", "dnsx", 2, _dnsx, "fast DNS record collection"),
+    PlaybookStep("recon-dnsx-brute", "dnsx", 2, _dnsx_bruteforce, "subdomain brute-force"),
     PlaybookStep("recon-katana", "katana", 3, _katana, "crawl endpoints and parameters"),
     PlaybookStep("recon-nikto", "nikto", 3, _nikto, "server misconfiguration pass"),
 )
@@ -471,18 +561,22 @@ _WEB_STEPS: tuple[PlaybookStep, ...] = (
     PlaybookStep("web-nikto", "nikto", 2, _nikto, "misconfiguration scan"),
     PlaybookStep("web-gobuster", "gobuster", 2, _gobuster, "directory brute force"),
     PlaybookStep("web-nuclei", "nuclei", 3, _nuclei, "template validation"),
+    PlaybookStep("web-zap", "zap", 3, _zap, "ZAP spider + passive baseline"),
+    PlaybookStep("web-nuclei-kev", "nuclei", 2, _nuclei_kev, "known-exploited CVEs first"),
     PlaybookStep("web-ferox", "feroxbuster", 3, _feroxbuster, "recursive discovery"),
     PlaybookStep("web-arjun", "arjun", 3, _arjun, "hidden parameter discovery"),
     PlaybookStep("web-testssl", "testssl", 3, _testssl, "TLS configuration review"),
     PlaybookStep("web-wpscan", "wpscan", 4, _wpscan, "WordPress enumeration (conditional)"),
     PlaybookStep("web-searchsploit", "searchsploit", 4, _searchsploit, "public exploit lookup"),
     PlaybookStep("web-nuclei-api", "nuclei", 4, _nuclei_api, "API-focused templates"),
+    PlaybookStep("web-nuclei-dast", "nuclei", 5, _nuclei_dast, "scoped DAST fuzzing"),
 )
 
 _NETWORK_STEPS: tuple[PlaybookStep, ...] = (
     PlaybookStep("net-tcp", "tcp_probe", 0, _tcp_probe, "native TCP connect sweep"),
     PlaybookStep("net-nmap", "nmap", 1, _nmap_top, "top-1000 TCP sweep"),
     PlaybookStep("net-naabu", "naabu", 1, _naabu, "fast port confirmation"),
+    PlaybookStep("net-rustscan", "rustscan", 1, _rustscan, "top-1000 sweep in seconds"),
     PlaybookStep("net-masscan", "masscan", 2, _masscan, "full-range sweep (aggressive only)"),
     PlaybookStep(
         "net-services", "nmap", 3, _nmap_services, "service detection on discovered ports"
@@ -490,6 +584,14 @@ _NETWORK_STEPS: tuple[PlaybookStep, ...] = (
     PlaybookStep("net-web-port", "httpx", 4, _httpx_web_port, "probe non-standard web ports"),
     PlaybookStep("net-nikto", "nikto", 4, _nikto_web_port, "misconfiguration on web port"),
     PlaybookStep("net-testssl", "testssl", 4, _testssl, "TLS review on web ports"),
+    PlaybookStep("net-tlsx", "tlsx", 4, _tlsx, "fast certificate grab"),
+    PlaybookStep(
+        "net-netexec",
+        "netexec",
+        4,
+        _netexec,
+        "SMB null-session enumeration (credential_testing only)",
+    ),
     PlaybookStep(
         "net-exploit-lookup",
         "searchsploit",
@@ -515,6 +617,22 @@ _API_STEPS: tuple[PlaybookStep, ...] = (
     PlaybookStep("api-nuclei", "nuclei", 2, _nuclei_api, "API/exposure templates"),
     PlaybookStep("api-ffuf", "ffuf", 3, _ffuf, "API path discovery"),
     PlaybookStep("api-searchsploit", "searchsploit", 3, _searchsploit, "exploit lookup"),
+    PlaybookStep("api-nuclei-dast", "nuclei", 4, _nuclei_dast, "scoped DAST fuzzing"),
+)
+
+
+_CODE_STEPS: tuple[PlaybookStep, ...] = (
+    PlaybookStep("code-gitleaks", "gitleaks", 1, _code_path, "secret scan of the worktree"),
+    PlaybookStep("code-trufflehog", "trufflehog", 1, _code_path, "detector-based secret scan"),
+    PlaybookStep("code-semgrep", "semgrep", 2, _code_semgrep, "static analysis (p/default)"),
+    PlaybookStep("code-trivy", "trivy", 2, _code_trivy, "deps, secrets, and misconfigs"),
+)
+
+
+_CLOUD_STEPS: tuple[PlaybookStep, ...] = (
+    PlaybookStep("cloud-kubebench", "kubebench", 1, _cloud_target, "CIS benchmark (on-node)"),
+    PlaybookStep("cloud-kubescape", "kubescape", 1, _cloud_target, "posture across frameworks"),
+    PlaybookStep("cloud-prowler", "prowler", 2, _cloud_prowler, "AWS posture (credential-gated)"),
 )
 
 
@@ -554,6 +672,20 @@ PLAYBOOKS: dict[str, Playbook] = {
             default_parallel=3,
         ),
         Playbook(
+            "code",
+            "Code audit",
+            "Local repository audit: secrets, SAST, dependencies. Needs scope.allowed_paths.",
+            _CODE_STEPS,
+            default_parallel=2,
+        ),
+        Playbook(
+            "cloud",
+            "Cloud & Kubernetes posture",
+            "CIS benchmarks, cluster posture, cloud audit. Needs node access / credentials.",
+            _CLOUD_STEPS,
+            default_parallel=2,
+        ),
+        Playbook(
             "full",
             "Full",
             "Recon + web + network in one run, ordered by dependency group.",
@@ -572,8 +704,11 @@ def get_playbook(name: str) -> Playbook:
     try:
         return PLAYBOOKS[name]
     except KeyError as exc:
+        names = playbook_names()
+        guess = difflib.get_close_matches(name, names, n=1, cutoff=0.6)
+        hint = f"; did you mean {guess[0]!r}?" if guess else ""
         raise PlaybookNotFound(
-            f"unknown playbook {name!r}; available: {', '.join(playbook_names())}"
+            f"unknown playbook {name!r}; available: {', '.join(names)}{hint}"
         ) from exc
 
 
@@ -697,6 +832,8 @@ class PlaybookRunner:
             return f"requires capability {capability.value!r} (not granted by scope.json)"
         if tool.phase not in self.scope.allowed_phases:
             return f"phase {tool.phase.value!r} is not permitted by scope.json"
+        if step.requires_passive_sources and not self.scope.allow_passive_sources:
+            return "passive sources not permitted (set allow_passive_sources in scope.json)"
         describe = self._describe(step.tool)
         if not describe["installed"]:
             return f"binary not installed: {describe['binary']}"

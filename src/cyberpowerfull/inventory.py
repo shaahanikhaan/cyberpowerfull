@@ -40,12 +40,12 @@ BINARY_CATALOG: dict[str, tuple[tuple[str, ...], str]] = {
     "masscan": (("masscan",), "network"),
     "naabu": (("naabu",), "network"),
     "rustscan": (("rustscan",), "network"),
+    "dnsx": (("dnsx",), "dns"),
     "netcat": (("nc", "netcat", "ncat"), "network"),
     "socat": (("socat",), "network"),
     # dns / osint
     "subfinder": (("subfinder",), "dns"),
     "amass": (("amass",), "dns"),
-    "dnsx": (("dnsx",), "dns"),
     "dnsrecon": (("dnsrecon",), "dns"),
     "dnsenum": (("dnsenum",), "dns"),
     "fierce": (("fierce",), "dns"),
@@ -53,6 +53,7 @@ BINARY_CATALOG: dict[str, tuple[tuple[str, ...], str]] = {
     "theHarvester": (("theHarvester",), "osint"),
     "recon-ng": (("recon-ng",), "osint"),
     "sherlock": (("sherlock",), "osint"),
+    "uncover": (("uncover",), "osint"),
     # http / web
     "httpx": (("httpx", "httpx-toolkit"), "web"),
     "katana": (("katana",), "web"),
@@ -77,10 +78,12 @@ BINARY_CATALOG: dict[str, tuple[tuple[str, ...], str]] = {
     "commix": (("commix",), "injection"),
     "xsstrike": (("xsstrike", "XSStrike"), "injection"),
     "testssl": (("testssl.sh", "testssl"), "tls"),
+    "tlsx": (("tlsx",), "tls"),
     "sslyze": (("sslyze",), "tls"),
     "sslscan": (("sslscan",), "tls"),
     # credentials / crypto
     "hydra": (("hydra",), "credentials"),
+    "netexec": (("nxc", "netexec"), "credentials"),
     "medusa": (("medusa",), "credentials"),
     "john": (("john",), "credentials"),
     "hashcat": (("hashcat",), "credentials"),
@@ -109,6 +112,14 @@ BINARY_CATALOG: dict[str, tuple[tuple[str, ...], str]] = {
     "rpcclient": (("rpcclient",), "network"),
     "impacket-secretsdump": (("impacket-secretsdump", "secretsdump.py"), "network"),
     "ssh-audit": (("ssh-audit",), "network"),
+    "gitleaks": (("gitleaks",), "code"),
+    "trufflehog": (("trufflehog",), "code"),
+    "semgrep": (("semgrep",), "code"),
+    "trivy": (("trivy",), "code"),
+    "zap": (("zap.sh", "zap", "zaproxy"), "web"),
+    "kube-bench": (("kube-bench",), "cloud"),
+    "kubescape": (("kubescape",), "cloud"),
+    "prowler": (("prowler",), "cloud"),
 }
 
 #: Directories scanned for wordlists, in priority order.
@@ -150,10 +161,10 @@ INSTALL_HINTS: dict[str, str] = {
     "nmap": "apt install nmap",
     "masscan": "apt install masscan",
     "naabu": "apt install naabu",
-    "rustscan": "apt install rustscan",
+    "rustscan": "apt install rustscan || cargo install rustscan",
     "subfinder": "apt install subfinder",
     "amass": "apt install amass",
-    "dnsx": "apt install dnsx",
+    "dnsx": "apt install dnsx || go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
     "dnsrecon": "apt install dnsrecon",
     "httpx": "apt install httpx-toolkit",
     "katana": "apt install katana",
@@ -171,12 +182,29 @@ INSTALL_HINTS: dict[str, str] = {
     "sqlmap": "apt install sqlmap",
     "commix": "apt install commix",
     "testssl": "apt install testssl.sh",
+    "tlsx": "apt install tlsx || go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest",
     "sslscan": "apt install sslscan",
     "hydra": "apt install hydra",
+    "netexec": "apt install netexec || pipx install netexec",
     "hashcat": "apt install hashcat",
     "john": "apt install john",
     "searchsploit": "apt install exploitdb",
     "msfconsole": "apt install metasploit-framework",
+    "uncover": (
+        "apt install uncover || go install github.com/projectdiscovery/uncover/cmd/uncover@latest"
+    ),
+    "gitleaks": "apt install gitleaks || go install github.com/zricethezav/gitleaks/v8@latest",
+    "trufflehog": (
+        "brew install trufflehog || go install github.com/trufflesecurity/trufflehog/v3@latest"
+    ),
+    "semgrep": "pipx install semgrep",
+    "trivy": "apt install trivy (aquasec repo) || brew install trivy",
+    "zap": "apt install zaproxy (kali) || download from zaproxy.org",
+    "kube-bench": "download from github.com/aquasecurity/kube-bench/releases",
+    "kubescape": (
+        "curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | bash"
+    ),
+    "prowler": "pipx install prowler",
     "sniper": "git clone https://github.com/1N3/Sn1per && sudo bash install.sh",
     "strix": "pipx install strix-agent",
     "pentagi": "docker compose up -d (vxcontrol/pentagi) and set PENTAGI_URL / PENTAGI_API_TOKEN",

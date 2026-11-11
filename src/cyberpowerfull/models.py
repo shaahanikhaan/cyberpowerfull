@@ -150,7 +150,7 @@ class BudgetState(BaseModel):
     """Deterministic run budget, checked by the orchestrator (never the model)."""
 
     max_iterations: int = 12
-    max_tokens: int = 24_000
+    max_tokens: int = 32_000
     max_seconds: int = 900
     iterations: int = 0
     tokens_used: int = 0
