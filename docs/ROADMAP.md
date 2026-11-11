@@ -15,16 +15,22 @@ every release; `CHANGELOG.md` records what actually landed.
 | 3.2.0 | Offline intelligence | advisory corpus + importers, version ranger, correlator, proof-only payload engine, native `http_probe`, bash toolkit |
 | 3.3.0 | Repository maturity | agent/maintainer docs, issue/PR templates, release + CodeQL workflows, doc-link tests |
 | 4.0.0 | One command | `cpf TARGET` / `./run.sh TARGET`: derived scope with recorded attestation, profiles, plain-language output, SARIF + run manifest |
+| 5.0.0 | Built-in auto agent | default no-model backend, live foreground display, faster parallel groups |
+| 5.0.1 | Missing-tool experience | skipped steps named with installs, honest coverage reporting |
+| 5.1.0 | Sn1per-style UX | `-t`/`-m` short flags, `--update`, verified Strix/PentAGI/Sn1per integrations |
+| 5.2.0 | Depth + guided runs | 43 tools, `code` + `cloud` playbooks, KEV-first nuclei, `cpf --init`, `--examples`, `--completion`, plain-language findings, easy-first README |
 
 ## Next
 
-### 4.1.0 — Machine-readable results, finished
+### 5.3.0 — Machine-readable results, finished
 
 4.0.0 writes SARIF and a run manifest; the consumption side is still missing.
 
 - **Schema validation**: run the emitted SARIF through the official 2.1.0 schema in CI, and
   assert the `physicalLocation` URIs are valid for the endpoint forms we emit.
   *Acceptance:* a CI job that fails on schema drift.
+  *Status:* DONE — `tests/test_sarif_schema.py` validates every run shape against the vendored
+  OASIS schema (`tests/fixtures/sarif-schema-2.1.0.json`) with `jsonschema` (dev-only dep).
 - **Upload job**: a documented, opt-in GitHub Actions snippet that uploads
   `artifacts/findings-*.sarif` to code scanning (never enabled by default — it publishes findings).
   *Acceptance:* the snippet is exercised in a scratch workflow, not just documented.
@@ -33,7 +39,7 @@ every release; `CHANGELOG.md` records what actually landed.
 - **HTML report** as a self-contained single file (no CDN, no JS requirement), for people who do
   not read Markdown. *Acceptance:* rendering test asserts no external references.
 
-### 4.2.0 — Parser conformance
+### 5.4.0 — Parser conformance
 
 The weakest honest claim today: parsers are unit-tested against fixtures, not real binary output.
 
@@ -45,7 +51,7 @@ The weakest honest claim today: parsers are unit-tested against fixtures, not re
 - **Drift alarm**: parser raises `ToolStatus.ERROR` with "unrecognised output" instead of silently
   returning zero findings when a known signature disappears.
 
-### 4.3.0 — Resumable and observable runs
+### 5.5.0 — Resumable and observable runs
 
 - **`--resume <run_id>`**: continue a playbook from recorded steps, skipping completed groups.
   Requires `trace.steps` to be sufficient (it is) and memory to be append-only (it is).
@@ -53,7 +59,7 @@ The weakest honest claim today: parsers are unit-tested against fixtures, not re
 - **Progress event stream** (`--event-log path.jsonl`) so a UI or CI job can follow along.
 - **Per-tool timing table** in the report (already measured, currently only in the trace).
 
-### 4.4.0 — Distribution
+### 5.6.0 — Distribution
 
 - **Container image** (`ghcr.io/...`) built from a pinned Kali base with the scanner set, running
   the same CLI and the same scope checks. Not a hosted service.
@@ -63,7 +69,7 @@ The weakest honest claim today: parsers are unit-tested against fixtures, not re
 - **Plugin boundary** for private tool wrappers (entry points under `cyberpowerfull.tools`) so
   forks do not have to patch `registry.py`.
 
-### 4.5.0 — Guided runs that stay honest
+### 5.7.0 — Guided runs that stay honest
 
 One-command mode made the first run easy; the second run is where operators still guess.
 
@@ -76,9 +82,10 @@ One-command mode made the first run easy; the second run is where operators stil
 - **Attestation hygiene**: `--scope-status` lists every auto-created scope with its attestation
   date, expiry (if any) and target count, so stale engagements are visible instead of forgotten.
   *Acceptance:* a test that an expired auto-scope reports itself as expired before running.
-- **Wizard for non-default choices** (`--wizard`): only for the decisions one command cannot
-  guess — credentials, passive sources, exclusions — and it must show the resulting scope before
-  writing it. *Acceptance:* the wizard path is exercised non-interactively via a recorded stdin.
+- **Wizard for non-default choices**: 5.2.0 shipped `cpf --init` (5 questions, recorded-stdin
+  test) covering target/playbook/permissions/authorization; still open is a decisions-only pass
+  for credentials, passive sources, and exclusions on an *existing* scope, showing the resulting
+  scope before writing it. *Acceptance:* exercised non-interactively via a recorded stdin.
 
 ### Research backlog (not scheduled)
 
