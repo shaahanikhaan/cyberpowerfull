@@ -197,6 +197,7 @@ def _load_records(output: str, out_file: str | None) -> list[dict[str, Any]]:
                 if records:
                     return records
         except OSError:
+            # Sibling unreadable: fall through to the legacy report text.
             pass
     records = _records_from_jsonl(output)
     if records:

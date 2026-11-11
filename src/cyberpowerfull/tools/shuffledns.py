@@ -6,7 +6,7 @@ Flags verified against projectdiscovery/shuffledns (README ``Flags`` plus
 ``-l`` subdomain list), ``-r``/``-tr`` take resolver files, ``-o`` is the
 output file, ``-j`` emits ndjson (``{"hostname": ...}`` only, see
 ``pkg/massdns/process.go`` ``writeOutput``), ``-t`` bounds concurrent
-resolves, ``-sw`` strict-checks wildcards. Trusted resolvers re-verify
+resolves, ``-sw`` strict-checks wildcards. Verification resolvers re-verify
 every hit, so wildcard noise drops when they are provided. ``-r`` accepts
 only a file, so this wrapper materialises the validated resolver IPs into
 the run-owned output directory next to the output file (never the repo).
@@ -33,12 +33,12 @@ class ShufflednsArgs(DomainInput):
     wordlist: str | None = Field(default=None, max_length=500)
     subdomains_file: str | None = Field(default=None, max_length=500)
     resolvers: list[str] = Field(min_length=1, max_length=10)
-    trusted_resolvers: list[str] = Field(default_factory=list, max_length=10)
+    verify_resolvers: list[str] = Field(default_factory=list, max_length=10)
     resolves: int = Field(default=10000, ge=100, le=20000)
     strict_wildcard: bool = False
     max_findings: int = Field(default=100, ge=1, le=500)
 
-    @field_validator("resolvers", "trusted_resolvers")
+    @field_validator("resolvers", "verify_resolvers")
     @classmethod
     def _check_ips(cls, values: list[str]) -> list[str]:
         for value in values:
@@ -90,10 +90,10 @@ class ShufflednsTool(BaseTool):
         else:
             argv.extend(["-l", args.subdomains_file or ""])
         argv.extend(["-r", str(resolvers_file)])
-        if args.trusted_resolvers:
-            trusted_file = directory / "cpf-trusted-resolvers.txt"
-            trusted_file.write_text("\n".join(args.trusted_resolvers) + "\n", encoding="utf-8")
-            argv.extend(["-tr", str(trusted_file)])
+        if args.verify_resolvers:
+            verify_file = directory / "cpf-verify-resolvers.txt"
+            verify_file.write_text("\n".join(args.verify_resolvers) + "\n", encoding="utf-8")
+            argv.extend(["-tr", str(verify_file)])
         argv.extend(["-t", str(args.resolves)])
         if args.strict_wildcard:
             argv.append("-sw")

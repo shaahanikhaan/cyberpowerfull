@@ -392,7 +392,7 @@ class TestShuffledns:
                     "target": "lab.test",
                     "wordlist": str(wordlist),
                     "resolvers": ["1.1.1.1", "9.9.9.9"],
-                    "trusted_resolvers": ["8.8.8.8"],
+                    "verify_resolvers": ["8.8.8.8"],
                 }
             ),
             str(out),
