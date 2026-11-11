@@ -33,7 +33,7 @@ def _state(
                 "difficulty": {},
                 "last_tool_result": last,
                 "known_failures": [],
-                "budget": {"max_iterations": max_iterations, "tokens_left": 24000},
+                "budget": {"max_iterations": max_iterations, "tokens_left": 32000},
             }
         )
         + "\n\nEmit exactly one decision JSON object."

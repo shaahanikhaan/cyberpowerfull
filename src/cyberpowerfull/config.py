@@ -53,7 +53,7 @@ class RunConfig:
     target: str | None = None
     llm_spec: str = f"auto:{DEFAULT_MODEL}"
     max_iterations: int = 12
-    max_tokens: int = 24_000
+    max_tokens: int = 32_000
     max_seconds: int = 900
     out_dir: Path = Path("artifacts")
     memory_path: Path = Path("artifacts/memory.sqlite3")
@@ -69,7 +69,7 @@ class RunConfig:
             scope_path=Path(os.environ.get("CYBERPOWERFULL_SCOPE", "scope.json")),
             llm_spec=os.environ.get("CYBERPOWERFULL_LLM", f"{backend}:{model}"),
             max_iterations=int(os.environ.get("CYBERPOWERFULL_MAX_ITERATIONS", "12")),
-            max_tokens=int(os.environ.get("CYBERPOWERFULL_MAX_TOKENS", "24000")),
+            max_tokens=int(os.environ.get("CYBERPOWERFULL_MAX_TOKENS", "32000")),
             max_seconds=int(os.environ.get("CYBERPOWERFULL_MAX_SECONDS", "900")),
         )
 

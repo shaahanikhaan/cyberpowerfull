@@ -1,17 +1,25 @@
 """nuclei wrapper: template-driven vulnerability validation (JSONL output).
 
 Flags and output keys are verified against projectdiscovery/nuclei v3.11.1
-(``cmd/nuclei/main.go``, ``pkg/output/output.go``, ``pkg/model/model.go``).
-The wrapper requests Interactsh to be disabled, but templates and the scanner
-are not sandboxed and can still contact other destinations.
+(``cmd/nuclei/main.go``, ``pkg/output/output.go``, ``pkg/model/model.go``),
+including the OAST controls (``-interactsh-server`` / ``-interactsh-token`` /
+``-no-interactsh``) and the DAST controls (``-dast`` / ``-fuzz-scope`` /
+``-fuzz-out-scope`` / ``-fuzz-aggression``).
+
+OAST stays disabled by default: stock nuclei phones a third-party interactsh
+server, which discloses engagement activity outside the scope. An operator may
+point at a self-hosted server or explicitly opt into the public one. DAST
+fuzzing defaults to a scope pattern covering exactly the validated target host.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import re
+from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.models import Finding, Phase, Severity
@@ -50,6 +58,14 @@ class NucleiArgs(UrlInput):
     max_host_error: int = Field(default=30, ge=1, le=200)
     timeout: int = Field(default=10, ge=1, le=120)
     retries: int = Field(default=1, ge=0, le=5)
+    interactsh_server: str | None = Field(default=None, max_length=200)
+    interactsh_token: str | None = Field(default=None, max_length=200)
+    enable_public_oast: bool = False
+    dast: bool = False
+    dast_scope: list[str] = Field(default_factory=list, max_length=10)
+    dast_out_of_scope: list[str] = Field(default_factory=list, max_length=10)
+    fuzz_aggression: Literal["low", "medium", "high"] = "low"
+    kev_only: bool = False
 
     @field_validator("severity")
     @classmethod
@@ -77,6 +93,38 @@ class NucleiArgs(UrlInput):
                 raise ValueError(f"invalid template path: {value!r}")
         return values
 
+    @field_validator("interactsh_server")
+    @classmethod
+    def _check_interactsh_server(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().rstrip("/")
+        parsed = urlparse(cleaned)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("interactsh_server must be an http(s) URL with a host")
+        return cleaned
+
+    @field_validator("dast_scope", "dast_out_of_scope")
+    @classmethod
+    def _check_scope_patterns(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not value or len(value) > 300 or any(char in value for char in "\n\r\0"):
+                raise ValueError("fuzz scope patterns must be 1-300 chars with no newlines")
+        return values
+
+    @model_validator(mode="after")
+    def _check_oast_and_dast(self) -> NucleiArgs:
+        if self.interactsh_token and not self.interactsh_server:
+            raise ValueError("interactsh_token needs interactsh_server")
+        if self.interactsh_server and self.enable_public_oast:
+            raise ValueError("choose one OAST destination: interactsh_server or public")
+        dast_tuned = bool(self.dast_scope or self.dast_out_of_scope) or (
+            self.fuzz_aggression != "low"
+        )
+        if dast_tuned and not self.dast:
+            raise ValueError("fuzz scope/aggression need dast=True")
+        return self
+
 
 class NucleiTool(BaseTool):
     name = "nuclei"
@@ -101,7 +149,6 @@ class NucleiTool(BaseTool):
             "-jsonl",
             "-silent",
             "-nc",
-            "-no-interactsh",
             "-disable-update-check",
             "-disable-redirects",
             "-rl",
@@ -119,10 +166,28 @@ class NucleiTool(BaseTool):
             "-severity",
             ",".join(args.severity),
         ]
-        if args.tags:
-            argv.extend(["-tags", ",".join(args.tags)])
+        if args.interactsh_server:
+            argv.extend(["-interactsh-server", args.interactsh_server])
+            if args.interactsh_token:
+                argv.extend(["-interactsh-token", args.interactsh_token])
+        elif not args.enable_public_oast:
+            argv.append("-no-interactsh")
+        # KEV-first: templates tagged kev cover CISA Known Exploited
+        # Vulnerabilities (2280+ in nuclei-templates v10.5.1). kev_only
+        # replaces tags: mixing would silently dilute the exploited-in-the-wild
+        # focus with thousands of unexploited checks.
+        tags = ["kev"] if args.kev_only else args.tags
+        if tags:
+            argv.extend(["-tags", ",".join(tags)])
         for template in args.templates:
             argv.extend(["-t", template])
+        if args.dast:
+            argv.append("-dast")
+            argv.extend(["-fuzz-aggression", args.fuzz_aggression])
+            for pattern in args.dast_scope or [_default_scope_pattern(args.target)]:
+                argv.extend(["-fuzz-scope", pattern])
+            for pattern in args.dast_out_of_scope:
+                argv.extend(["-fuzz-out-scope", pattern])
         return argv
 
     def _execute(self, args: ToolInput, argv: list[str], policy: ToolPolicy):
@@ -208,7 +273,37 @@ class NucleiTool(BaseTool):
 
     def observations(self, args: NucleiArgs, output: str) -> list[str]:
         count = sum(1 for _ in json_lines(output))
-        return [f"nuclei matched {count} template(s)"] if count else ["nuclei: no template matched"]
+        notes = (
+            [f"nuclei matched {count} template(s)"] if count else ["nuclei: no template matched"]
+        )
+        if args.interactsh_server:
+            notes.append("oast via self-hosted interactsh (no public callbacks)")
+        elif args.enable_public_oast:
+            notes.append(
+                "WARNING: public OAST enabled: target-derived callbacks reach "
+                "third-party interactsh infrastructure"
+            )
+        else:
+            notes.append("oast disabled (-no-interactsh)")
+        if args.dast:
+            patterns = len(args.dast_scope) or 1
+            notes.append(
+                f"dast fuzzing on ({patterns} scope pattern(s), "
+                f"aggression {args.fuzz_aggression})"
+            )
+        return notes
+
+
+def _default_scope_pattern(target: str) -> str:
+    """A ``-fuzz-scope`` regex covering exactly the validated target host.
+
+    Builders only see Facts, never the scope, so the safe default is the one
+    host the runner already validated — never discovered URLs or subdomains,
+    which ``_accept`` does not scope-check.
+    """
+    candidate = target if "://" in target else f"https://{target}"
+    host = urlparse(candidate).hostname or target
+    return f"^https?://{re.escape(host)}(:[0-9]+)?/"
 
 
 def json_id_list(value: object) -> list[str]:

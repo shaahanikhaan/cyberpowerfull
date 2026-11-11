@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] — Recon depth, code + cloud playbooks, guided first run
+
+### Added
+
+- **14 tool wrappers (43 total)**: `dnsx`, `tlsx`, `rustscan`, `uncover` (recon);
+  `netexec` (SMB null/guest only), `metasploit` (allowlisted modules, `aggressive` only);
+  `gitleaks`, `trufflehog`, `semgrep`, `trivy` (local code audit); `zap` (passive default,
+  active needs `aggressive`); `kubebench`, `kubescape`, `prowler` (cloud posture, real OCSF).
+  All parsers verified against upstream schemas and golden fixtures.
+- **`code` playbook**: secrets + SAST + dependency audit of a local repo, contained to the new
+  `scope.allowed_paths` (sibling paths blocked, fail-fast message points at `cpf --init`).
+- **`cloud` playbook**: kube-bench CIS, kubescape posture, prowler provider audit; credentials
+  stay in the environment, never in traces.
+- **Nuclei DAST + KEV-first**: `kev_only` mode runs CISA-KEV templates before the broad pass;
+  OAST callback support stays tri-state (off by default).
+- **`cpf --init`**: guided 5-question setup (target → playbook → permissions → authorization →
+  scope file) with a recorded-stdin test; `--examples` prints copy-paste recipes;
+  `--completion` emits bash/zsh/fish scripts.
+- **Plain-language findings**: every report finding carries a `what this means` line
+  (`explain.py`, 27 rules); unknown playbooks get a did-you-mean suggestion; every error exit
+  code prints the exact command that fixes it.
+- **README rewritten easy-first**: 60-second quickstart, jobs table, contents, live counts
+  (43 tools, 8 playbooks, 106 steps, 79 binaries, 1000+ tests).
+
+### Changed
+
+- Default token budget 24k → 32k (`RunConfig`, `BudgetState`, `$CYBERPOWERFULL_MAX_TOKENS`):
+  the 43-tool catalogue no longer starves the end-to-end agent runs.
+
 ## [5.1.0] — Sn1per-style UX, self-update, verified agent integrations
 
 ### Added

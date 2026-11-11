@@ -150,6 +150,7 @@ class Scope(BaseModel):
     max_rps: float = Field(default=5.0, gt=0, le=100, allow_inf_nan=False)
     allow_passive_sources: StrictBool = False
     allowed_wordlists: list[str] = Field(default_factory=list, max_length=50)
+    allowed_paths: list[str] = Field(default_factory=list, max_length=50)
     allowed_nuclei_templates: list[str] = Field(default_factory=list, max_length=50)
     expires: date | None = None
     contact: str | None = Field(default=None, max_length=200)
@@ -178,7 +179,7 @@ class Scope(BaseModel):
             cleaned.append(entry)
         return cleaned
 
-    @field_validator("allowed_wordlists", "allowed_nuclei_templates")
+    @field_validator("allowed_wordlists", "allowed_nuclei_templates", "allowed_paths")
     @classmethod
     def _validate_paths(cls, values: list[str]) -> list[str]:
         if any(not value.strip() or "\x00" in value for value in values):
@@ -192,8 +193,8 @@ class Scope(BaseModel):
                 'scope.json is not marked authorized: set "authorized": true only for '
                 "engagements you are contractually permitted to test"
             )
-        if not self.targets and not self.domains:
-            raise ScopeError("scope.json must declare at least one target or domain")
+        if not self.targets and not self.domains and not self.allowed_paths:
+            raise ScopeError("scope.json must declare at least one target, domain, or allowed path")
         if not self.allowed_phases:
             raise ScopeError("scope.json must declare at least one allowed phase")
         if self.expires is not None:
@@ -294,6 +295,7 @@ class Scope(BaseModel):
             f"max_requests_per_second: {self.max_rps}",
             f"allow_passive_sources: {self.allow_passive_sources}",
             f"allowed_wordlists: {', '.join(self.allowed_wordlists) or 'none'}",
+            f"allowed_paths: {', '.join(self.allowed_paths) or 'none'}",
             f"allowed_nuclei_templates: {', '.join(self.allowed_nuclei_templates) or 'none'}",
             f"expires: {self.expires.isoformat() if self.expires else 'no-expiry'}",
             f"scope_fingerprint: {self.fingerprint()[:16]}",
@@ -360,6 +362,7 @@ def bootstrap_scope(
     allow_passive_sources: bool = False,
     allowed_wordlists: Sequence[str] = (),
     allowed_nuclei_templates: Sequence[str] = (),
+    allowed_paths: Sequence[str] = (),
     notes: str | None = None,
 ) -> Scope:
     """Build a validated :class:`Scope` for ``--init-scope``.
@@ -392,6 +395,7 @@ def bootstrap_scope(
             allow_passive_sources=allow_passive_sources,
             allowed_wordlists=list(allowed_wordlists),
             allowed_nuclei_templates=list(allowed_nuclei_templates),
+            allowed_paths=list(allowed_paths),
             expires=expires,
             contact=contact,
             notes=notes,

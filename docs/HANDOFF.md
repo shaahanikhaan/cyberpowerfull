@@ -17,7 +17,7 @@ public description; this file is the internal map.
 
 A local-only autonomous penetration-testing agent with **two execution paths over one guarded
 tool layer**: (a) an autonomous agent loop driven by the built-in auto agent (or an optional
-loopback-only local model), and (b) six deterministic playbooks that run the same typed tools
+loopback-only local model), and (b) eight deterministic playbooks that run the same typed tools
 with no model at all. Both paths
 are wrapped in a capability gate, per-call scope validation, an append-only SQLite memory, and a
 structured trace → Markdown report / findings JSON pipeline. A live host inventory tells the agent
@@ -54,7 +54,7 @@ src/cyberpowerfull/
 │                     bootstrap_scope()/write_scope() for --init-scope
 ├── models.py         Phase, Capability, Severity, Finding, Decision, BudgetState
 ├── config.py         RunConfig, ModelConfig, ToolPolicy (env sanitation, output caps)
-├── inventory.py      live probe: 68 catalogued binaries, aliases, versions, wordlists,
+├── inventory.py      live probe: 79 catalogued binaries, aliases, versions, wordlists,
 │                     nuclei templates, NSE, Exploit-DB, Docker/agent detection, install hints
 ├── knowledge.py      read-only readers over the local Kali libraries
 ├── playbook.py       6 deterministic playbooks, Facts, PlaybookRunner, COMMON_TCP_PORTS

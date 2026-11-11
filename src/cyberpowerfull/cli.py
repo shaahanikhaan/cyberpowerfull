@@ -20,7 +20,7 @@ from cyberpowerfull.brain.orchestrator import Orchestrator
 from cyberpowerfull.brain.prompt import PromptContext, build_system_prompt
 from cyberpowerfull.brain.tda import TaskDifficultyAssessor, TDAInput
 from cyberpowerfull.config import RunConfig
-from cyberpowerfull.errors import CyberpowerfullError, LLMError
+from cyberpowerfull.errors import CyberpowerfullError, LLMError, ScopeViolation
 from cyberpowerfull.intel.models import Component
 from cyberpowerfull.inventory import build_toolchain, install_hint
 from cyberpowerfull.knowledge import (
@@ -383,6 +383,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--init-scope",
         metavar="PATH",
         help="write a validated scope file instead of running anything",
+    )
+    parser.add_argument(
+        "--init",
+        dest="init_wizard",
+        action="store_true",
+        help="guided setup: answer 5 questions, get a scope file and a scan",
+    )
+    parser.add_argument(
+        "--examples",
+        action="store_true",
+        help="print copy-paste recipes for common scans",
+    )
+    parser.add_argument(
+        "--completion",
+        metavar="SHELL",
+        choices=["bash", "zsh", "fish"],
+        help="print a shell completion script (bash, zsh, fish)",
+    )
+    parser.add_argument(
+        "--allowed-paths",
+        metavar="LIST",
+        help="comma-separated repo roots for --init-scope (code playbook)",
     )
     parser.add_argument(
         "--targets",
@@ -867,7 +889,10 @@ def _run_playbook(args: argparse.Namespace) -> int:
     from cyberpowerfull.config import RunConfig
 
     scope = load_scope(args.scope)
-    target = scope.require(args.target or "")
+    if args.playbook == "code":
+        target = _require_code_target(scope, args.target or "")
+    else:
+        target = scope.require(args.target or "")
     cfg = RunConfig(
         scope_path=Path(args.scope),
         target=target,
@@ -1096,6 +1121,9 @@ def _init_scope(parser: argparse.ArgumentParser, args: argparse.Namespace) -> in
         contact=args.contact,
         max_rps=args.max_rps,
         allow_passive_sources=args.allow_passive_sources,
+        allowed_paths=[
+            item.strip() for item in (args.allowed_paths or "").split(",") if item.strip()
+        ],
         notes="created with --init-scope",
     )
     path = write_scope(args.init_scope, scope, force=args.force)
@@ -1175,6 +1203,13 @@ def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
         target_host,
     )
 
+    if Path(raw_target).is_dir():
+        from cyberpowerfull.errors import ScopeError
+
+        raise ScopeError(
+            f"{raw_target!r} is a local directory: one-command mode scans hosts; "
+            "run 'cpf --init' and pick the code playbook"
+        )
     profile = profile_for(args.profile)
     if args.playbook:
         # `cpf TARGET -m web`: the explicit mode wins over the profile's playbook
@@ -1357,6 +1392,247 @@ def _quickstart() -> int:
     return 2
 
 
+_EXIT_HINTS = {
+    3: "hint: create or fix the scope file: 'cpf --init' (guided) or 'cpf --init-scope ...'",
+    4: "hint: the target is outside the scope file; check --target against scope.json",
+    5: "hint: the model backend is down; playbooks (--playbook) need no model at all",
+    7: "hint: the plan asked for something the scope forbids; narrow the playbook or widen the scope",  # noqa: E501
+    8: "hint: list playbooks with 'cpf --list-playbooks'",
+}
+
+
+def _ask(prompt: str, default: str = "") -> str:
+    """One wizard question; blank means the default."""
+    suffix = f" [{default}]" if default else ""
+    try:
+        answer = input(f"  {prompt}{suffix}: ").strip()
+    except EOFError:
+        return ""
+    return answer or default
+
+
+def _ask_yes_no(prompt: str, default: bool = False) -> bool:
+    hint = "Y/n" if default else "y/N"
+    answer = _ask(f"{prompt} ({hint})").strip().lower()
+    if not answer:
+        return default
+    return answer in {"y", "yes"}
+
+
+def _init_wizard(args: argparse.Namespace) -> int:
+    """Guided first run: target -> playbook -> authorization -> scope -> run."""
+    import re
+
+    from cyberpowerfull.playbook import describe_playbooks
+    from cyberpowerfull.scope import bootstrap_scope, write_scope
+
+    if not sys.stdin.isatty():
+        print("error: cpf --init needs an interactive terminal.", file=sys.stderr)
+        print(
+            "hint: non-interactive? use 'cpf --init-scope ...' flags, or "
+            "'cpf TARGET --i-am-authorized'.",
+            file=sys.stderr,
+        )
+        return 2
+    print("cpf init - answer 5 questions, get a scan.")
+    print("")
+    raw_target = _ask("1/5 target (host, URL, or local repo path)")
+    if not raw_target:
+        print("error: a target is required.", file=sys.stderr)
+        return 2
+    rows = describe_playbooks()
+    print("  2/5 playbook:")
+    for index, row in enumerate(rows, start=1):
+        print(f"    {index}) {row['name']:<10} {row['description']}")
+    default_name = "code" if Path(raw_target).exists() else "recon"
+    default_index = next(
+        (index for index, row in enumerate(rows, start=1) if row["name"] == default_name),
+        1,
+    )
+    choice = _ask(f"pick [1-{len(rows)}]", str(default_index))
+    try:
+        playbook_name = rows[int(choice) - 1]["name"]
+    except (ValueError, IndexError):
+        names = [row["name"] for row in rows]
+        if choice in names:
+            playbook_name = choice
+        else:
+            print(f"error: pick a number 1-{len(rows)} or a playbook name.", file=sys.stderr)
+            return 2
+    slug = re.sub(r"[^a-z0-9]+", "-", raw_target.lower()).strip("-")[:40] or "scan"
+    engagement = _ask("3/5 engagement name", f"cpf-{slug}")
+    capabilities: list[str] = []
+    print("  4/5 permissions (all default to no):")
+    if _ask_yes_no("allow active attacks (nuclei DAST, ZAP active, masscan)?"):
+        capabilities.append("aggressive")
+    if _ask_yes_no("allow credential testing (hydra, SMB null-session)?"):
+        capabilities.append("credential_testing")
+    passive = _ask_yes_no("allow passive sources (subfinder, uncover search engines)?")
+    allowed_paths = [str(Path(raw_target).resolve())] if Path(raw_target).exists() else []
+    authorization_ref = _ask("5/5 authorization reference (contract/ticket)", "operator-attested")
+    ok = _attestation(raw_target, interactive=True)
+    if not ok:
+        print("not authorized: nothing was written and nothing will run.", file=sys.stderr)
+        return 3
+    default_scope = args.scope if getattr(args, "scope", None) else "scope.json"
+    scope_path = _ask("scope file", str(default_scope))
+    try:
+        scope = bootstrap_scope(
+            engagement=engagement or f"cpf-{slug}",
+            targets=[] if allowed_paths else [raw_target],
+            capabilities=capabilities,
+            authorization_ref=authorization_ref,
+            authorized=True,
+            allow_passive_sources=passive,
+            allowed_paths=allowed_paths,
+            notes="created with cpf --init",
+        )
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    path = write_scope(scope_path, scope, force=True)
+    print("")
+    print(f"scope written: {path}")
+    if not _ask_yes_no(f"run the {playbook_name} playbook against {raw_target} now?", True):
+        print("")
+        print("  next:")
+        print(f"    cpf --doctor --scope {path}")
+        print(f"    cpf --scope {path} --target {raw_target} --playbook {playbook_name}")
+        return 0
+    args.scope = str(path)
+    args.target = raw_target
+    args.playbook = playbook_name
+    return _run_playbook(args)
+
+
+def _examples() -> int:
+    print("cpf recipes - copy, paste, scan.")
+    print("")
+    print("  one command, nothing to configure:")
+    print("    cpf example.com")
+    print("    cpf https://app.example.test -m web")
+    print("    cpf 10.0.0.5 --profile deep")
+    print("")
+    print("  guided setup (writes scope.json, then runs):")
+    print("    cpf --init")
+    print("")
+    print("  audit a local repo for secrets, SAST, bad deps:")
+    print("    cpf --init                      # point it at the repo, pick 'code'")
+    print("    cpf --scope scope.json --target ./myrepo --playbook code")
+    print("")
+    print("  known-exploited CVEs first, then the broad pass:")
+    print("    cpf https://app.example.test -m web     # KEV templates run before the rest")
+    print("")
+    print("  cloud posture (needs cloud credentials in the environment):")
+    print("    cpf --init                      # pick 'cloud', target is a label")
+    print("    cpf --scope scope.json --target prod --playbook cloud")
+    print("")
+    print("  first run on this machine (no setup, loopback only):")
+    print("    cpf --lab")
+    print("    cpf --doctor")
+    print("")
+    print("  automation (JSON out, nothing interactive):")
+    print("    cpf example.com --i-am-authorized --json")
+    return 0
+
+
+_COMPLETION_SCRIPTS = {
+    "bash": (
+        "# cpf completion (bash): cpf --completion bash >> ~/.bashrc\n"
+        "_cpf_complete() {\n"
+        "    local cur prev\n"
+        "    COMPREPLY=()\n"
+        '    cur="${COMP_WORDS[COMP_CWORD]}"\n'
+        '    prev="${COMP_WORDS[COMP_CWORD-1]}"\n'
+        '    case "$prev" in\n'
+        "        -m|--mode|--playbook)\n"
+        '            COMPREPLY=($(compgen -W "recon web network stealth api code cloud full" -- "$cur"))\n'  # noqa: E501
+        "            return 0 ;;\n"
+        "        --profile)\n"
+        '            COMPREPLY=($(compgen -W "quick standard deep" -- "$cur"))\n'
+        "            return 0 ;;\n"
+        "        --completion)\n"
+        '            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))\n'
+        "            return 0 ;;\n"
+        "    esac\n"
+        '    COMPREPLY=($(compgen -W "--init --examples --completion --lab --doctor --toolchain --list-playbooks --list-tools --init-scope --scope --target --playbook --mode --profile --plan --json --dry-run --i-am-authorized --help --version" -- "$cur"))\n'  # noqa: E501
+        "}\n"
+        "complete -F _cpf_complete cpf cyberpowerfull\n"
+    ),
+    "zsh": (
+        "# cpf completion (zsh): cpf --completion zsh >> ~/.zshrc\n"
+        "_cpf() {\n"
+        "    _arguments -C \\\n"
+        "        '--init[guided setup]' \\\n"
+        "        '--examples[copy-paste recipes]' \\\n"
+        "        '--lab[loopback demo scan]' \\\n"
+        "        '--doctor[readiness check]' \\\n"
+        "        '--toolchain[live tool inventory]' \\\n"
+        "        '--list-playbooks[list playbooks]' \\\n"
+        "        '--list-tools[list tools]' \\\n"
+        "        '--init-scope[write a scope file]:path:_files' \\\n"
+        "        '--scope[scope file]:path:_files' \\\n"
+        "        '--target[target host or path]:target:' \\\n"
+        "        '--playbook[playbook]:playbook:(recon web network stealth api code cloud full)' \\\n"  # noqa: E501
+        "        '-m[playbook]:playbook:(recon web network stealth api code cloud full)' \\\n"
+        "        '--profile[scan depth]:profile:(quick standard deep)' \\\n"
+        "        '--json[JSON output]' \\\n"
+        "        '--dry-run[plan without running]' \\\n"
+        "        '--i-am-authorized[non-interactive authorization attestation]' \\\n"
+        "        '--help[show help]' \\\n"
+        "        '--version[show version]'\n"
+        "}\n"
+        "compdef _cpf cpf cyberpowerfull\n"
+    ),
+    "fish": (
+        "# cpf completion (fish): cpf --completion fish > ~/.config/fish/completions/cpf.fish\n"
+        "complete -c cpf -f -l init -d 'guided setup'\n"
+        "complete -c cpf -f -l examples -d 'copy-paste recipes'\n"
+        "complete -c cpf -f -l lab -d 'loopback demo scan'\n"
+        "complete -c cpf -f -l doctor -d 'readiness check'\n"
+        "complete -c cpf -f -l toolchain -d 'live tool inventory'\n"
+        "complete -c cpf -f -l list-playbooks -d 'list playbooks'\n"
+        "complete -c cpf -f -l list-tools -d 'list tools'\n"
+        "complete -c cpf -f -l scope -d 'scope file' -r -F\n"
+        "complete -c cpf -f -l target -d 'target host or path' -r\n"
+        "complete -c cpf -f -l playbook -s m -d 'playbook' -r -a 'recon web network stealth api code cloud full'\n"  # noqa: E501
+        "complete -c cpf -f -l profile -d 'scan depth' -r -a 'quick standard deep'\n"
+        "complete -c cpf -f -l json -d 'JSON output'\n"
+        "complete -c cpf -f -l dry-run -d 'plan without running'\n"
+        "complete -c cpf -f -l help -d 'show help'\n"
+    ),
+}
+
+
+def _completion(shell: str) -> int:
+    print(_COMPLETION_SCRIPTS[shell], end="")
+    return 0
+
+
+def _require_code_target(scope, raw: str) -> str:
+    """Fail fast for ``--playbook code``: the path must exist and be allowed."""
+    from cyberpowerfull.scope import Scope
+
+    assert isinstance(scope, Scope)
+    if not raw.strip():
+        raise ScopeViolation("the code playbook needs --target PATH (a local repo or file)")
+    try:
+        candidate = Path(raw).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        raise ScopeViolation(f"target path does not exist: {raw!r}") from None
+    for entry in scope.allowed_paths:
+        try:
+            root = Path(entry).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if candidate == root or root in candidate.parents:
+            return str(candidate)
+    raise ScopeViolation(
+        f"path {raw!r} is not listed in scope.allowed_paths; "
+        "run 'cpf --init' and point it at the repo"
+    )
+
+
 def _run_lab(args: argparse.Namespace) -> int:
     """Serve a real loopback page and scan it, so a first run needs no setup."""
     from cyberpowerfull.config import RunConfig
@@ -1476,6 +1752,12 @@ def main(argv: list[str] | None = None) -> int:
             return _intel(args)
         if args.init_scope:
             return _init_scope(parser, args)
+        if args.init_wizard:
+            return _init_wizard(args)
+        if args.examples:
+            return _examples()
+        if args.completion:
+            return _completion(args.completion)
         if args.positional_target:
             if args.target and args.target != args.positional_target:
                 parser.error("give the target once: either 'cpf TARGET' or '--target TARGET'")
@@ -1505,6 +1787,9 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     except CyberpowerfullError as exc:
         print(f"error: {exc}", file=sys.stderr)
+        hint = _EXIT_HINTS.get(exc.exit_code)
+        if hint:
+            print(hint, file=sys.stderr)
         return exc.exit_code
     except (OSError, sqlite3.Error) as exc:
         print(f"error: local storage operation failed: {exc}", file=sys.stderr)

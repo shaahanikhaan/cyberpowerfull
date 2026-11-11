@@ -85,6 +85,27 @@ class HostInput(ToolInput):
             raise ValueError(str(exc)) from exc
 
 
+class LocalPathInput(ToolInput):
+    """Argument model for tools that scan a local file or directory.
+
+    ``target`` is a filesystem path, never a host: scope containment is
+    enforced against ``scope.allowed_paths`` (see :mod:`orchestrator`), not
+    against host targets. Existence is checked here so dry-runs fail fast;
+    authorization is checked by the worker.
+    """
+
+    @field_validator("target")
+    @classmethod
+    def _must_exist(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned or "\x00" in cleaned:
+            raise ValueError("target must be a non-empty local path")
+        candidate = Path(cleaned).expanduser()
+        if not candidate.exists():
+            raise ValueError(f"target path does not exist: {cleaned}")
+        return str(candidate)
+
+
 class DomainInput(HostInput):
     """Argument model for tools that require a DNS name, never a raw IP."""
 
@@ -182,6 +203,8 @@ class BaseTool(ABC):
     binary_alternatives: ClassVar[tuple[str, ...]] = ()
     #: Scope capability required before this tool may run. ``None`` = always.
     required_capability: ClassVar[Capability | None] = None
+    scans_local_paths: ClassVar[bool] = False
+    cloud_posture: ClassVar[bool] = False
     #: True for wrappers that drive another autonomous system (Strix, PentAGI,
     #: Sn1per). They inherit the engagement scope but need ``external_agents``.
     external: ClassVar[bool] = False

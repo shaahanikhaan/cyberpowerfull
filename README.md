@@ -1,36 +1,85 @@
 # cyberpowerfull
 
-**What is it?** A local-only autonomous penetration-testing agent — a model-backed reasoning
-loop **and** a deterministic multi-tool automation engine — that is not a chatbot, needs
-no cloud API key, needs no docker for its core loop, and runs real typed tools against an authorized
-target with evidence capture: recon, scanning, validation, and reporting.
+**cyberpowerfull is a local-only autonomous penetration-testing agent**: a model-backed
+reasoning loop **and** a deterministic multi-tool automation engine. It is not a chatbot, needs
+no cloud API key and no docker for its core loop, and runs recon, scanning, validation, and
+reporting against targets you are authorized to test.
 
-**What does it do?** Recon, scanning, validation, and reporting against an authorized target —
-subdomain and DNS enumeration, port and service discovery, HTTP probing, crawling, content
-discovery, TLS review, CMS enumeration, template validation, bounded credential testing,
-public-exploit correlation, and budgeted delegation to external autonomous agents.
+- **One command to a report**: `cpf example.com` — scope, plan, scan, Markdown + SARIF output.
+- **Two paths, one guarded tool layer**: a reasoning loop (local model, optional) or 8
+  deterministic playbooks (no model at all) over 43 typed tools and 79 catalogued host binaries.
+- **Honest by construction**: missing binaries and denied capabilities are named skips, never
+  simulated results; proof-only validation, append-only memory, authorized `scope.json` or no run.
 
-**What makes it different?** Two execution paths over one guarded tool layer: the reasoning loop
-(TDA + EGATS) when you want a model to choose steps, and six deterministic playbooks when you
-want reproducible automation with no model at all. Plus a live inventory of the host toolchain,
-capability-gated aggression, append-only memory, an offline knowledge base (Exploit-DB, nuclei
-templates, NSE scripts), and no cloud API key, no Docker for the core loop, and no chat surface.
-
-[![version](https://img.shields.io/badge/version-5.1.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-5.2.0-blue.svg)](CHANGELOG.md)
 [![CI](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![CodeQL](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/codeql.yml/badge.svg)](https://github.com/shaahanikhaan/cyberpowerfull/actions/workflows/codeql.yml)
 
+## Scan something in 60 seconds
+
+```bash
+git clone https://github.com/shaahanikhaan/cyberpowerfull
+cd cyberpowerfull
+./run.sh example.com
+```
+
+That is the whole quickstart: `./run.sh` creates the virtualenv once, then `cpf` asks you to
+confirm authorization, picks a plan, runs the tools installed on this machine, and writes the
+report. Results land in `artifacts/` (report, findings JSON, SARIF, run manifest).
+
+| You want | Run |
+|---|---|
+| to be guided (5 questions → scope → scan) | `cpf --init` |
+| copy-paste recipes for common scans | `cpf --examples` |
+| a web app, one area only | `cpf example.com -m web` |
+| a local repo: secrets, SAST, bad deps | `cpf --init`, pick `code`, point it at the repo |
+| cloud posture (CIS, cluster, provider audit) | `cpf --scope scope.json --target prod --playbook cloud` |
+| to see it work with no target of your own | `./run.sh --lab` — real loopback service, scanned end to end |
+| to know what this host can run | `./run.sh --doctor` |
+| to install the scanner set (Kali/Debian) | `./run.sh --install-tools` |
+| the autonomous agent loop | `cpf example.com --ai` (add `--llm llamacpp:model` for a local model) |
+| to prove a run happened | `cyberpowerfull --replay traces/latest.json` |
+
+New here? Read [docs/GUIDE.md](docs/GUIDE.md) next: install → first run → scope → results.
+
+## What cyberpowerfull is for
+
+One workspace that covers the jobs otherwise stitched together from a dozen tools:
+
+- **Web assessment** — fingerprint, crawl, content discovery, nuclei (KEV-first), ZAP, TLS,
+  WordPress, hidden parameters, exploit correlation.
+- **Network assessment** — fast port surface (rustscan/naabu/masscan), nmap service detection,
+  SMB null-session enumeration, service exploit lookup.
+- **Code audit** — gitleaks + trufflehog secrets, semgrep SAST, trivy dependencies, all
+  contained to `scope.allowed_paths`.
+- **Cloud posture** — kube-bench CIS checks, kubescape cluster posture, prowler provider audit.
+- **Recon & OSINT surface** — subfinder/amass/dnsx DNS, uncover search engines, httpx/tlsx
+  probing, katana crawling, WAF detection.
+- **Proof, not claims** — every validation ships evidence; every skip names its reason.
+
+## Contents
+
+- [Scan something in 60 seconds](#scan-something-in-60-seconds)
+- [What cyberpowerfull is for](#what-cyberpowerfull-is-for)
+- [Safety & Scope](#safety--scope-read-first)
+- [Architecture](#architecture)
+- [Start here — one command](#start-here--one-command)
+- [Automation playbooks](#automation-playbooks)
+- [Supported Tools](#supported-tools)
+- [Host toolchain and local knowledge](#host-toolchain-and-local-knowledge)
+- [Documentation](#documentation)
+
 | Property | Value |
 |---|---|
 | Reasoning | built-in auto agent (default, no model) or a local model via llama.cpp — optional |
-| Automation | 6 deterministic playbooks, 34 ordered steps, parallel groups, fact-driven adaptivity |
-| Typed tools | 29 (22 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
+| Automation | 8 deterministic playbooks, 106 ordered steps, parallel groups, fact-driven adaptivity |
+| Typed tools | 43 (36 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
-| Host inventory | 68 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
-| Tests | 879 tests, 84% line coverage, `pytest --cov-fail-under=70` enforced in CI |
+| Host inventory | 79 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
+| Tests | 1000+ tests, `pytest --cov-fail-under=70` enforced in CI |
 | Outputs per run | Markdown report, findings JSON, SARIF 2.1.0, `run.json` manifest, trace |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
 
@@ -137,7 +186,7 @@ Four components, strict separation, a deterministic control plane around an opti
 │   workers: recon | scan | validate | external                                │
 │   allowlists derived from the registry · phase check · capability gate       │
 │   scope re-check · negative cache · argv list (shell=False) · parser         │
-│   29 typed tools · 29 skill packs · 6 playbooks                              │
+│   43 typed tools · 29 skill packs · 8 playbooks                              │
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 │  ToolResult(status, findings, observations)
 ┌───────────────────────────────▼──────────────────────────────────────────────┐
@@ -188,7 +237,7 @@ src/cyberpowerfull/
 ├── config.py               # RunConfig, ModelConfig, ToolPolicy (env sanitation)
 ├── inventory.py            # live toolchain: binaries, wordlists, templates, agents
 ├── knowledge.py            # local Exploit-DB / nuclei templates / NSE readers
-├── playbook.py             # deterministic multi-tool engine (6 playbooks)
+├── playbook.py             # deterministic multi-tool engine (8 playbooks)
 ├── trace.py                # Trace / StepRecord / replay
 ├── reporting.py            # Markdown report + findings JSON
 ├── brain/
@@ -198,7 +247,7 @@ src/cyberpowerfull/
 │   ├── tda.py              # Task Difficulty Assessment
 │   ├── attack_tree.py      # EGATS state machine
 │   └── orchestrator.py     # RootAgent, WorkerAgent, Orchestrator
-├── tools/                  # 29 typed wrappers + registry + report extractors
+├── tools/                  # 43 typed wrappers + registry + report extractors
 ├── intel/                  # offline advisory corpus, NVD/KEV importers, correlation
 ├── payloads/               # proof-only payload catalogue + request builder
 ├── native_scan.py          # stdlib port scan, HTTP facts, nmap XML inventory
@@ -213,7 +262,7 @@ SECURITY.md  CHANGELOG.md   # policy and history
 .github/                    # CI, release, CodeQL, issue forms, PR template, CODEOWNERS
 scripts/                    # install.sh (setup) and release_check.py (pre-tag checks)
 Makefile                    # setup / lab / doctor / tools / test / docs / release-check
-tests/                      # 879 tests across CLI, tools, playbooks, lab, docs, repo hygiene
+tests/                      # 1000+ tests across CLI, tools, playbooks, lab, docs, repo hygiene
 ```
 
 ---
@@ -246,7 +295,7 @@ Already installed (`pipx install cyberpowerfull` or `pip install -e .`)? Use `cp
 cpf example.com                  # standard pass
 cpf example.com --profile quick   # surface map only, ~5-10 minutes
 cpf example.com --profile deep    # two-hour budget, wider parallelism
-cpf example.com -m web            # one area only: recon, web, network, stealth, api, full
+cpf example.com -m web            # one area only: recon, web, network, stealth, api, code, cloud, full
 cpf example.com --plan            # print the plan, send nothing
 cpf example.com --i-am-authorized --authorization-ref SOW-2026-014   # non-interactive
 ```
@@ -358,12 +407,14 @@ guardrails as the reasoning loop, so scope, phase, capability, and the negative 
 
 | Playbook | Steps | What it does |
 |---|---|---|
-| `recon` | 11 | native port sweep, subdomain enumeration, DNS records, HTTP probe, WAF, fingerprint, crawl, nikto |
-| `web` | 14 | web fingerprint, crawl, content discovery, nuclei templates, TLS, WordPress (conditional), exploit lookup |
-| `network` | 9 | native sweep, nmap, naabu, masscan (aggressive only), service detection, web-port probes, service exploit lookup |
+| `recon` | 14 | port sweep, DNS/subdomain enumeration (incl. dnsx), HTTP/TLS probe, WAF, fingerprint, crawl, nikto |
+| `web` | 17 | fingerprint, crawl, content discovery, nuclei (KEV-first), ZAP (passive default), TLS, WordPress, exploit lookup |
+| `network` | 12 | rustscan/naabu/nmap surface, masscan (aggressive only), service detection, SMB null-session, exploit lookup |
 | `stealth` | 6 | low-volume pass: passive names, one HTTP probe, fingerprint, limited crawl, medium+ templates only |
-| `api` | 6 | route harvesting, hidden parameters, API templates, path discovery, exploit lookup |
-| `full` | 34 | recon + web + network, dependency-ordered |
+| `api` | 7 | route harvesting, hidden parameters, API templates, path discovery, exploit lookup |
+| `code` | 4 | local repo audit: gitleaks + trufflehog secrets, semgrep SAST, trivy deps (needs `allowed_paths`) |
+| `cloud` | 3 | kube-bench CIS, kubescape posture, prowler audit (needs node access / cloud credentials) |
+| `full` | 43 | recon + web + network in one run, ordered by dependency group |
 
 Adaptivity is deterministic and evidence-based:
 
@@ -535,13 +586,27 @@ names are resolved automatically (`httpx` → `httpx-toolkit`, `testssl.sh` → 
 | `strix` | validation | `target` (URL), `scan_mode`, `max_budget_usd`, `max_turns`, `instruction` | console + run dir | tested (unit, mocked binary) |
 | `pentagi` | validation | `target` (URL), `provider`, `max_wait_s`, `poll_s`, `instruction` | GraphQL/REST | tested (unit, mocked HTTP) |
 | `sn1per` | scanning | `target`, `mode`, `workspace`, `port`, `loot_dir` | loot files | tested (unit, tmp loot) |
+| `dnsx` | recon | `target` (domain), `subdomains`, `wordlist`, `resolvers` | JSONL | tested (unit) |
+| `tlsx` | scanning | `target`, `ports`, `san`, `version` | JSONL | tested (unit) |
+| `rustscan` | scanning | `target`, `ports`/`port_range`, `batch_size`, `timeout_ms` | greppable text | tested (unit) |
+| `uncover` | recon | `target` (query), `engine`, `limit`, `fields` (needs `passive_sources`) | JSON | tested (unit) |
+| `netexec` | scanning | `target`, `protocol`, `shares`, null/guest only | text parse | tested (unit) |
+| `metasploit` | scanning | `target`, `module` (allowlist), `options` (needs `aggressive`) | resource-script output | tested (unit, mocked) |
+| `gitleaks` | scanning | `target` (local path), `redact`, `no_git` | JSON report | tested (unit) |
+| `trufflehog` | scanning | `target` (local path), `verified_only`, `no_verification` | JSON stream | tested (unit) |
+| `semgrep` | scanning | `target` (local path), `config`, `severity` | JSON | tested (unit) |
+| `trivy` | scanning | `target` (local path), `scanners`, `severity` | JSON | tested (unit) |
+| `zap` | scanning | `target` (URL), `active` (needs `aggressive`), `context` | traditional JSON XML | tested (unit) |
+| `kubebench` | scanning | `target` (node label), `targets`, `checks` | JSON | tested (unit) |
+| `kubescape` | scanning | `target`, `frameworks`, `manifests` (needs `allowed_paths`) | JSON | tested (unit) |
+| `prowler` | scanning | `target` (label), `provider`, `checks`, `services` (needs cloud credentials) | OCSF JSON | tested (unit) |
 
 Status legend: *unit* means argv construction, output parsing, error paths, and `subprocess`
 interactions are covered by tests with mocked subprocess or HTTP calls. These wrappers have not
 been validated against live third-party targets in CI; treat the parsers as version-sensitive.
 `tcp_probe` is also exercised end-to-end by the CI smoke job against a real local socket.
 
-Capability-gated tools (`masscan`, `naabu`, `hydra`, `strix`, `pentagi`, `sn1per`) are blocked by
+Capability-gated tools (`masscan`, `naabu`, `hydra`, `netexec`, `metasploit`, `strix`, `pentagi`, `sn1per`) are blocked by
 the worker layer before execution unless `scope.json` grants the capability.
 
 ---
@@ -679,7 +744,7 @@ API-key code path for inference and none will be added.
 ```bash
 make setup                  # venv + editable install + readiness check
 make lab                    # real loopback lab: scan, no model, no binaries
-make test                   # 879 tests, coverage gate (70%) via make test + CI
+make test                   # 1000+ tests, coverage gate (70%) via make test + CI
 make lint                   # ruff + black, non-mutating
 pre-commit install          # ruff, black, trailing-whitespace, end-of-file-fixer
 ```
