@@ -75,7 +75,7 @@ One workspace that covers the jobs otherwise stitched together from a dozen tool
 |---|---|
 | Reasoning | built-in auto agent (default, no model) or a local model via llama.cpp — optional |
 | Automation | 8 deterministic playbooks, 106 ordered steps, parallel groups, fact-driven adaptivity |
-| Typed tools | 43 (36 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
+| Typed tools | 60 (53 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
 | Host inventory | 80 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
