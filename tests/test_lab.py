@@ -330,3 +330,13 @@ class TestProjectEntrypoints:
         assert "make lab" in readme
         assert "--init-scope" in readme
         assert "--authorization-ref" in readme
+
+
+class TestLabPortMessages:
+    def test_privileged_port_says_not_permitted(self) -> None:
+        with pytest.raises(RuntimeError, match=r"not permitted.*above 1023"):
+            pick_port(9)
+
+    def test_out_of_range_port_says_in_use(self) -> None:
+        with pytest.raises(RuntimeError, match="already in use"):
+            pick_port(70000)

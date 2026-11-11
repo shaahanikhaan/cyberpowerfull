@@ -12,6 +12,7 @@ than pretending to scan something that is not there.
 
 from __future__ import annotations
 
+import errno
 import http.server
 import socket
 import threading
@@ -83,17 +84,22 @@ class _Server(http.server.ThreadingHTTPServer):
     allow_reuse_address = True
 
 
-def port_is_free(port: int, host: str = LAB_TARGET) -> bool:
-    """True when a TCP listener can be bound on ``host:port`` right now."""
+def _bind_errno(port: int, host: str = LAB_TARGET) -> int | None:
+    """None when ``host:port`` binds; otherwise the errno that refused it."""
     if not 0 < port < 65536:
-        return False
+        return errno.EINVAL
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind((host, port))
-        except OSError:
-            return False
-    return True
+        except OSError as exc:
+            return exc.errno or errno.EADDRINUSE
+    return None
+
+
+def port_is_free(port: int, host: str = LAB_TARGET) -> bool:
+    """True when a TCP listener can be bound on ``host:port`` right now."""
+    return _bind_errno(port, host) is None
 
 
 def pick_port(preferred: int | None = None, host: str = LAB_TARGET) -> int:
@@ -104,7 +110,13 @@ def pick_port(preferred: int | None = None, host: str = LAB_TARGET) -> int:
     raised instead of silently scanning a port that the lab does not own.
     """
     if preferred is not None:
-        if not port_is_free(preferred, host):
+        refused = _bind_errno(preferred, host)
+        if refused is not None:
+            if refused in (errno.EACCES, errno.EPERM):
+                raise RuntimeError(
+                    f"port {preferred} is not permitted on {host} (privileged port); "
+                    "pass --lab-port with a port above 1023"
+                )
             raise RuntimeError(
                 f"port {preferred} is already in use on {host}; pass --lab-port with a free port"
             )

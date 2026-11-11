@@ -53,7 +53,7 @@ EPILOG = """\
 examples:
   cpf example.com                              # one command: scope, profile, scan, report
   cpf https://app.example.com --profile deep   # standard plan with a two-hour budget
-  cpf example.com -m web                       # one area only: recon|web|network|stealth|api|full
+  cpf example.com -m web  # one area only (recon|web|network|stealth|api|code|cloud|full)
   cpf example.com --plan                       # show what it would do, run nothing
   cpf 127.0.0.1 --i-am-authorized              # non-interactive attestation
   cyberpowerfull --scope scope.json --target 127.0.0.1
@@ -100,17 +100,25 @@ def build_parser() -> argparse.ArgumentParser:
         description=DESCRIPTION,
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
     )
+    g_target = parser.add_argument_group("target and authorization")
+    g_run = parser.add_argument_group("one-command mode")
+    g_playbook = parser.add_argument_group("playbooks")
+    g_agent = parser.add_argument_group("agent loop")
+    g_intel = parser.add_argument_group("local knowledge and intel")
+    g_output = parser.add_argument_group("output and reports")
+    g_setup = parser.add_argument_group("setup and information")
     defaults = RunConfig()
     # Environment values are resolved after parsing so that --help/--version and
     # explicit CLI overrides keep working even when an environment value is bad.
-    parser.add_argument(
+    g_target.add_argument(
         "--scope",
         default=None,
         metavar="PATH",
         help="engagement scope file (default: $CYBERPOWERFULL_SCOPE or scope.json)",
     )
-    parser.add_argument(
+    g_target.add_argument(
         "positional_target",
         nargs="?",
         metavar="TARGET",
@@ -119,16 +127,16 @@ def build_parser() -> argparse.ArgumentParser:
             "runs, and writes the report)"
         ),
     )
-    parser.add_argument(
+    g_target.add_argument(
         "-t", "--target", metavar="HOST", help="authorized target host (or pass it positionally)"
     )
-    parser.add_argument(
+    g_run.add_argument(
         "--profile",
         default=None,
         choices=["quick", "standard", "deep"],
         help="one-command mode: how far to go (default: standard)",
     )
-    parser.add_argument(
+    g_target.add_argument(
         "--i-am-authorized",
         dest="i_am_authorized",
         action="store_true",
@@ -137,58 +145,58 @@ def build_parser() -> argparse.ArgumentParser:
             "Required when no scope file exists and stdin is not a terminal"
         ),
     )
-    parser.add_argument(
+    g_target.add_argument(
         "--authorization-ref",
         metavar="REF",
         help="one-command mode: written authorization reference to record in the scope file",
     )
-    parser.add_argument(
+    g_target.add_argument(
         "--scope-dir",
         default="engagements",
         metavar="DIR",
         help="one-command mode: where auto-created scope files live (default: engagements)",
     )
-    parser.add_argument(
+    g_run.add_argument(
         "--plan",
         action="store_true",
         help="one-command mode: print the plan and exit without sending a single request",
     )
-    parser.add_argument(
+    g_run.add_argument(
         "--polite",
         action="store_true",
         help="one-command mode: do not grant the 'aggressive' capability (no high-rate scans)",
     )
-    parser.add_argument(
+    g_run.add_argument(
         "--with-credentials",
         dest="with_credentials",
         action="store_true",
         help="one-command mode: also grant 'credential_testing' (hydra steps become eligible)",
     )
-    parser.add_argument(
+    g_run.add_argument(
         "--ai",
         action="store_true",
         help="one-command mode: use the autonomous agent loop instead of the deterministic "
         "playbook (built-in auto agent; add --llm llamacpp for a local model)",
     )
-    parser.add_argument(
+    g_agent.add_argument(
         "--llm",
         default=None,
         metavar="SPEC",
         help="decision backend: auto (built-in agent, default), llamacpp[:MODEL], "
         "replay:PATH (default: $CYBERPOWERFULL_LLM or auto)",
     )
-    parser.add_argument(
+    g_output.add_argument(
         "--replay", metavar="TRACE", help="replay a recorded trace instead of running the agent"
     )
-    parser.add_argument(
+    g_agent.add_argument(
         "--check", action="store_true", help="validate scope, tool availability, and model endpoint"
     )
-    parser.add_argument(
+    g_agent.add_argument(
         "--dry-run",
         action="store_true",
         help="build tool command lines but execute nothing (safe rehearsal)",
     )
-    parser.add_argument(
+    g_agent.add_argument(
         "--max-iterations",
         type=_positive_int,
         default=None,
@@ -196,7 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"reasoning iteration budget (default: $CYBERPOWERFULL_MAX_ITERATIONS or "
         f"{defaults.max_iterations})",
     )
-    parser.add_argument(
+    g_agent.add_argument(
         "--max-tokens",
         type=_positive_int,
         default=None,
@@ -204,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"estimated token budget (default: $CYBERPOWERFULL_MAX_TOKENS or "
         f"{defaults.max_tokens})",
     )
-    parser.add_argument(
+    g_agent.add_argument(
         "--max-seconds",
         type=_positive_int,
         default=None,
@@ -212,159 +220,167 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"wall-clock budget in seconds (default: $CYBERPOWERFULL_MAX_SECONDS or "
         f"{defaults.max_seconds})",
     )
-    parser.add_argument("--out", default="artifacts", metavar="DIR", help="report output directory")
-    parser.add_argument(
+    g_output.add_argument(
+        "--out", default="artifacts", metavar="DIR", help="report output directory"
+    )
+    g_output.add_argument(
         "--trace", default="traces/latest.json", metavar="PATH", help="where to write the run trace"
     )
-    parser.add_argument(
+    g_output.add_argument(
         "--memory", default="artifacts/memory.sqlite3", metavar="PATH", help="SQLite memory path"
     )
-    parser.add_argument(
+    g_agent.add_argument(
         "--render-prompt", action="store_true", help="print the rendered system prompt"
     )
-    parser.add_argument("--list-tools", action="store_true", help="list typed tool wrappers")
-    parser.add_argument("--list-skills", action="store_true", help="list skill packs")
-    parser.add_argument(
+    g_setup.add_argument("--list-tools", action="store_true", help="list typed tool wrappers")
+    g_setup.add_argument("--list-skills", action="store_true", help="list skill packs")
+    g_setup.add_argument(
         "--toolchain",
         action="store_true",
         help="probe this host and print the live pentest toolchain inventory",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--doctor",
         action="store_true",
         help="readiness check: scope, binaries, wordlists, templates, external agents, model",
     )
-    parser.add_argument("--list-playbooks", action="store_true", help="list playbooks")
-    parser.add_argument(
+    g_playbook.add_argument("--list-playbooks", action="store_true", help="list playbooks")
+    g_playbook.add_argument(
         "--playbook",
         metavar="NAME",
         help="run a deterministic multi-tool playbook instead of the reasoning loop",
     )
-    parser.add_argument(
+    g_playbook.add_argument(
         "-m",
         "--mode",
         dest="playbook",
         metavar="NAME",
         help=(
-            "sn1per-style alias for --playbook: recon, web, network, stealth, api, "
-            "or full (works with 'cpf TARGET' too)"
+            "sn1per-style alias for --playbook: recon, web, network, stealth, api, code, "
+            "cloud, or full (works with 'cpf TARGET' too)"
         ),
     )
-    parser.add_argument(
+    g_playbook.add_argument(
         "--parallel",
         type=int,
         default=0,
         metavar="N",
         help="parallel steps inside a playbook group (default: playbook specific)",
     )
-    parser.add_argument("--max-steps", type=int, default=80, metavar="N")
-    parser.add_argument(
+    g_playbook.add_argument(
+        "--max-steps",
+        type=int,
+        default=80,
+        metavar="N",
+        help="stop a playbook run after N executed steps (default: 80)",
+    )
+    g_intel.add_argument(
         "--agents", action="store_true", help="list external autonomous agent integrations"
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--search-exploits",
         dest="search_exploits",
         metavar="QUERY",
         help="query the local Exploit-DB mirror (no network access)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--templates",
         nargs="?",
         const="",
         metavar="PATTERN",
         help="list installed nuclei templates, optionally filtered",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--nse",
         nargs="?",
         const="",
         metavar="PATTERN",
         help="list installed nmap NSE scripts, optionally filtered",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--wordlists",
         nargs="?",
         const="",
         metavar="KIND",
         help="list discovered wordlists (kind: discovery|passwords|dns|fuzzing)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--intel-status",
         action="store_true",
         help="show the local advisory corpus: counts, years, KEV entries, top products",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--import-feed",
         metavar="PATH",
         action="append",
         default=None,
         help="import an offline advisory feed (NVD 2.0/1.1 JSON or CISA KEV JSON)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--feed-format",
         default="auto",
         choices=["auto", "nvd", "nvd11", "kev", "custom"],
         help="advisory feed format for --import-feed (default: auto-detect)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--intel-store",
         metavar="PATH",
         default=None,
         help="advisory SQLite corpus path (default: intel/advisories.sqlite3)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--correlate",
         metavar="SPEC",
         help="correlate observed components: 'product=version;product=version' or a JSON file",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--min-cvss",
         type=float,
         default=0.0,
         metavar="N",
         help="minimum CVSS for --correlate results (default: 0)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--payload",
         dest="payload_skill",
         metavar="SKILL",
         help="print proof-only payloads for a skill (sql_injection, xss, ssrf, ssti, ...)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--payload-ids",
         default=None,
         metavar="ID[,ID]",
         help="restrict --payload to explicit catalogue ids",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--http-probe",
         metavar="URL",
         dest="http_probe",
         help="send one bounded in-scope HTTP request and print the evidence (JSON)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--probe-method",
         default="GET",
         choices=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
         help="method for --http-probe (default: GET)",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--probe-body",
         default=None,
         help="request body for --http-probe",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--probe-marker",
         default=None,
         help="marker string to look for in the --http-probe response",
     )
-    parser.add_argument(
+    g_intel.add_argument(
         "--payload-param",
         default="q",
         metavar="NAME",
         help="parameter name used when rendering query payloads (default: q)",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--lab",
         action="store_true",
         help=(
@@ -372,68 +388,68 @@ def build_parser() -> argparse.ArgumentParser:
             "(no model, no external binaries, nothing to configure)"
         ),
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--lab-port",
         type=int,
         default=None,
         metavar="PORT",
         help="port for the lab service (default: first free of 8080/8443/9200/27017/6379)",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--init-scope",
         metavar="PATH",
         help="write a validated scope file instead of running anything",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--init",
         dest="init_wizard",
         action="store_true",
         help="guided setup: answer 5 questions, get a scope file and a scan",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--examples",
         action="store_true",
         help="print copy-paste recipes for common scans",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--completion",
         metavar="SHELL",
         choices=["bash", "zsh", "fish"],
         help="print a shell completion script (bash, zsh, fish)",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--allowed-paths",
         metavar="LIST",
         help="comma-separated repo roots for --init-scope (code playbook)",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--targets",
         metavar="LIST",
         help="comma-separated targets for --init-scope (e.g. app.example.test,10.0.0.5)",
     )
-    parser.add_argument("--engagement", metavar="NAME", help="engagement name for --init-scope")
+    g_setup.add_argument("--engagement", metavar="NAME", help="engagement name for --init-scope")
     # --authorization-ref is declared once, above, and serves both modes.
-    parser.add_argument(
+    g_setup.add_argument(
         "--capabilities",
         metavar="LIST",
         help="comma-separated capabilities for --init-scope "
         "(aggressive, credential_testing, external_agents)",
     )
-    parser.add_argument("--expires", metavar="YYYY-MM-DD", help="expiry date for --init-scope")
-    parser.add_argument("--contact", metavar="EMAIL", help="contact for --init-scope")
-    parser.add_argument(
+    g_setup.add_argument("--expires", metavar="YYYY-MM-DD", help="expiry date for --init-scope")
+    g_setup.add_argument("--contact", metavar="EMAIL", help="contact for --init-scope")
+    g_setup.add_argument(
         "--max-rps",
         type=float,
         default=5.0,
         metavar="N",
         help="rate hint recorded by --init-scope (default: 5.0)",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--allow-passive-sources",
         action="store_true",
         help="record allow_passive_sources=true in the scope written by --init-scope",
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--authorize",
         action="store_true",
         help=(
@@ -441,7 +457,7 @@ def build_parser() -> argparse.ArgumentParser:
             "--authorization-ref; without both, the written scope refuses to run"
         ),
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--force",
         action="store_true",
         help=(
@@ -449,7 +465,7 @@ def build_parser() -> argparse.ArgumentParser:
             "with --update: pull over uncommitted changes"
         ),
     )
-    parser.add_argument(
+    g_setup.add_argument(
         "--update",
         action="store_true",
         help=(
@@ -457,9 +473,10 @@ def build_parser() -> argparse.ArgumentParser:
             "then exit (runs nothing)"
         ),
     )
-    parser.add_argument("--json", action="store_true", help="emit the trace JSON on stdout")
-    parser.add_argument("--quiet", action="store_true", help="suppress per-step progress lines")
-    parser.add_argument("--version", action="version", version=f"cyberpowerfull {__version__}")
+    g_output.add_argument("--json", action="store_true", help="emit the trace JSON on stdout")
+    g_output.add_argument("--quiet", action="store_true", help="suppress per-step progress lines")
+    g_setup.add_argument("--version", action="version", version=f"cyberpowerfull {__version__}")
+    g_setup.add_argument("-h", "--help", action="help", help="show this help message and exit")
     return parser
 
 
@@ -764,9 +781,12 @@ def _doctor(args: argparse.Namespace) -> int:
     missing = toolchain.missing()
     print(f"  binaries:     {len(installed)} installed, {len(missing)} missing")
     for name in ("nmap", "nuclei", "ffuf", "nikto", "subfinder", "httpx"):
+        if toolchain.has(name):
+            detail = toolchain.version(name) or "ready"
+        else:
+            detail = install_hint(name) or "no install hint recorded"
         state = "ready" if toolchain.has(name) else "MISSING"
-        version = toolchain.version(name) or ""
-        print(f"    {name:<11} {state:<8} {version[:60]}")
+        print(f"    {name:<11} {state:<8} {detail[:60]}")
     for kind, label in (
         ("discovery", "content discovery"),
         ("dns", "subdomain"),
@@ -811,7 +831,8 @@ def _doctor(args: argparse.Namespace) -> int:
 def _list_playbooks() -> int:
     rows = describe_playbooks()
     width = max(len(row["name"]) for row in rows)
-    print(f"{'playbook'.ljust(width)}  steps  tools")
+    header_steps = "steps".rjust(5)
+    print(f"{'playbook'.ljust(width)}  {header_steps}  tools")
     for row in rows:
         print(
             f"{row['name'].ljust(width)}  {row['steps']:>5}  "
@@ -1401,6 +1422,33 @@ _EXIT_HINTS = {
 }
 
 
+def _hint_for(exc: CyberpowerfullError) -> str | None:
+    """Pick the fix hint: exit code first, then the message for overloaded codes.
+
+    Exit 3 (ScopeError) covers both broken scope files and malformed targets, so the
+    message decides which fix to print. Unknown codes get no hint, never a wrong one.
+    """
+    if exc.exit_code == 3:
+        lowered = str(exc).lower()
+        if (
+            lowered.startswith(
+                (
+                    "target",
+                    "a target",
+                    "could not read a host",
+                    "empty host",
+                    "invalid ip",
+                    "refusing to parse",
+                )
+            )
+            or "not a host name" in lowered
+        ):
+            return "hint: fix the target: pass a host or URL, e.g. 'cpf example.com'"
+        if lowered.startswith("unknown profile"):
+            return "hint: choose --profile quick, standard, or deep"
+    return _EXIT_HINTS.get(exc.exit_code)
+
+
 def _ask(prompt: str, default: str = "") -> str:
     """One wizard question; blank means the default."""
     suffix = f" [{default}]" if default else ""
@@ -1787,7 +1835,7 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     except CyberpowerfullError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        hint = _EXIT_HINTS.get(exc.exit_code)
+        hint = _hint_for(exc)
         if hint:
             print(hint, file=sys.stderr)
         return exc.exit_code

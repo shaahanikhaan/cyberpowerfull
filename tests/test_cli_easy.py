@@ -228,3 +228,71 @@ class TestOnePassDirectoryGuard:
         repo.mkdir()
         code = main([str(repo), "--i-am-authorized", "--out", str(workdir / "artifacts")])
         assert code != 0
+
+
+class TestGroupedHelp:
+    def test_help_has_professional_sections(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--help"])
+        assert excinfo.value.code == 0
+        out = capsys.readouterr().out
+        for section in (
+            "target and authorization:",
+            "one-command mode:",
+            "playbooks:",
+            "agent loop:",
+            "local knowledge and intel:",
+            "output and reports:",
+            "setup and information:",
+        ):
+            assert section in out
+        # -h lives with the other informational flags, not in a lonely group.
+        setup = out[out.index("setup and information:") :]
+        assert "-h, --help" in setup
+
+    def test_mode_help_lists_all_playbooks(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit):
+            main(["--help"])
+        out = capsys.readouterr().out
+        for name in ("recon", "web", "network", "stealth", "api", "code", "cloud", "full"):
+            assert name in out
+
+    def test_every_option_has_help_text(self) -> None:
+        from cyberpowerfull.cli import build_parser
+
+        for action in build_parser()._actions:
+            if action.dest in {"help"}:
+                continue
+            assert action.help, f"--{action.dest} has no help text"
+
+
+class TestDoctorHints:
+    def test_missing_tools_show_install_hints(self, workdir: Path, capsys) -> None:
+        code = main(["--doctor", "--scope", str(workdir / "scope.json")])
+        assert code == 0
+        out = capsys.readouterr().out
+        # On a bare host the key scanners are missing and each names its fix.
+        assert "MISSING  apt install nmap" in out
+
+
+class TestMessageAwareHints:
+    def test_malformed_target_hint_names_the_target(self, capsys) -> None:
+        code = main(["not a host!!", "--plan"])
+        assert code == 3
+        err = capsys.readouterr().err
+        assert "fix the target" in err
+        assert "scope file" not in err
+
+    def test_unknown_profile_hint_names_profiles(self) -> None:
+        from cyberpowerfull.cli import _hint_for
+        from cyberpowerfull.errors import ScopeError
+        from cyberpowerfull.onepass import profile_for
+
+        with pytest.raises(ScopeError) as excinfo:
+            profile_for("ultra")
+        assert _hint_for(excinfo.value) == "hint: choose --profile quick, standard, or deep"
+
+    def test_missing_scope_hint_names_init(self, tmp_path: Path, capsys) -> None:
+        code = main(["--scope", str(tmp_path / "nope.json"), "--target", "127.0.0.1", "--check"])
+        assert code == 3
+        assert "cpf --init" in capsys.readouterr().err
