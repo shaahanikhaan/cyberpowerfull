@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`--doctor` names the fix for every missing scanner**: the readiness table's third column
+  shows the install command (`apt install nmap`, …) instead of going blank.
+- **Error hints match the actual problem**: a malformed target now says `fix the target`
+  instead of pointing at the scope file; `--lab-port 9` says `not permitted (privileged
+  port)` instead of `already in use`.
+- **`--help` grouped like professional CLIs**: 7 sections (target, one-command, playbooks,
+  agent loop, intel, output, setup) instead of one 195-line list; `-m` help and examples now
+  list all 8 playbooks; `--max-steps` gains its missing help text; every flag is asserted to
+  carry help text.
+
 ## [5.2.0] — Recon depth, code + cloud playbooks, guided first run
 
 ### Added
