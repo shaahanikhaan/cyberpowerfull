@@ -23,8 +23,9 @@ from typing import Literal
 
 from pydantic import Field
 
+from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.models import Finding, Phase, Severity
-from cyberpowerfull.tools.base import BaseTool, ToolInput, json_lines, truncate
+from cyberpowerfull.tools.base import BaseTool, ToolInput, ToolStatus, _Exec, json_lines, truncate
 
 Provider = Literal["aws", "azure", "gcp", "kubernetes"]
 
@@ -53,6 +54,18 @@ class ProwlerTool(BaseTool):
     phase = Phase.SCANNING
     skill = "cloud_posture"
     binary = "prowler"
+    # Ambient cloud credentials ARE the scope for a posture audit; the
+    # presence gate in _execute already verified them in this environment.
+    env_passthrough = (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_PROFILE",
+        "AZURE_CLIENT_ID",
+        "AZURE_CLIENT_SECRET",
+        "AZURE_TENANT_ID",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    )
     cloud_posture = True
     writes_output_file = True
     timeout_s = 1800
@@ -75,12 +88,10 @@ class ProwlerTool(BaseTool):
             argv.extend(["-f", *args.regions])
         return argv
 
-    def _execute(self, args: ToolInput, argv: list[str], policy):  # type: ignore[no-untyped-def]
-        from cyberpowerfull.tools.base import ToolResult, ToolStatus
-
+    def _execute(self, args: ToolInput, argv: list[str], policy: ToolPolicy) -> _Exec:
         hint = _missing_credential_hint(getattr(args, "provider", "aws"))
         if hint is not None:
-            return ToolResult(tool=self.name, status=ToolStatus.MISSING, error=hint)
+            return _Exec(status=ToolStatus.MISSING, error=hint)
         return super()._execute(args, argv, policy)
 
     def parse(self, args: ProwlerArgs, output: str, out_file: str | None = None) -> list[Finding]:

@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from cyberpowerfull.config import ToolPolicy
 from cyberpowerfull.errors import InvalidToolArguments
+from cyberpowerfull.inventory import install_hint
 from cyberpowerfull.models import Capability, Finding, Phase, Severity
 from cyberpowerfull.scope import normalize_host
 
@@ -202,6 +203,11 @@ class BaseTool(ABC):
     #: Fallback executable names (e.g. Kali ships ProjectDiscovery httpx as
     #: ``httpx-toolkit`` to avoid clashing with the Python HTTP client).
     binary_alternatives: ClassVar[tuple[str, ...]] = ()
+    #: Exact environment variable names passed through sanitization to the
+    #: subprocess. Declare ONLY variables the tool needs to authenticate
+    #: (model keys, cloud credentials, engine API keys); everything else in
+    #: the deny list stays stripped.
+    env_passthrough: ClassVar[tuple[str, ...]] = ()
     #: Scope capability required before this tool may run. ``None`` = always.
     required_capability: ClassVar[Capability | None] = None
     scans_local_paths: ClassVar[bool] = False
@@ -227,6 +233,16 @@ class BaseTool(ABC):
             if candidate and shutil.which(candidate):
                 return candidate
         return None
+
+    def _missing_error(self) -> str:
+        """MISSING error, with the offline install hint when one is known."""
+        names = ", ".join((self.binary, *self.binary_alternatives))
+        error = f"binary not installed: {names}"
+        for candidate in (self.name, self.binary, *self.binary_alternatives):
+            hint = install_hint(candidate) if candidate else None
+            if hint:
+                return f"{error} ({hint})"
+        return error
 
     # -- argument handling -------------------------------------------------
     def validate(self, raw_args: dict[str, Any]) -> ToolInput:
@@ -271,8 +287,7 @@ class BaseTool(ABC):
             return _Exec(status=ToolStatus.ERROR, error="native tool did not implement _execute")
         executable = self.resolve_binary()
         if executable is None:
-            names = ", ".join((self.binary, *self.binary_alternatives))
-            return _Exec(status=ToolStatus.MISSING, error=f"binary not installed: {names}")
+            return _Exec(status=ToolStatus.MISSING, error=self._missing_error())
         try:
             # Spool process output to disk, not unbounded RAM, and read only a
             # limited excerpt after completion. The temporary files are private.
@@ -282,7 +297,7 @@ class BaseTool(ABC):
                     stdout=stdout_file,
                     stderr=stderr_file,
                     timeout=min(self.timeout_s, policy.timeout_s),
-                    env=policy.sanitized_env(),
+                    env=policy.sanitized_env(keep=self.env_passthrough),
                     check=False,
                     shell=False,
                 )
@@ -302,7 +317,7 @@ class BaseTool(ABC):
                 error=f"{self.name} exceeded {min(self.timeout_s, policy.timeout_s):g}s",
             )
         except FileNotFoundError:
-            return _Exec(status=ToolStatus.MISSING, error=f"binary not installed: {self.binary}")
+            return _Exec(status=ToolStatus.MISSING, error=self._missing_error())
         except OSError as exc:
             return _Exec(status=ToolStatus.ERROR, error=f"{self.name} failed to start: {exc}")
 

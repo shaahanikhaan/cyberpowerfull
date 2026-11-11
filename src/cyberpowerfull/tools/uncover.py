@@ -128,6 +128,8 @@ class UncoverTool(BaseTool):
     phase = Phase.RECON
     skill = "subdomain_enum"
     binary = "uncover"
+    # Engine API keys come from ambient env (README "Provider Configuration").
+    env_passthrough = tuple(var for names in _ENGINE_ENV.values() for var in names)
     timeout_s = 300
     description = (
         "Queries internet search engines (Shodan, Censys, Fofa, ...) for hosts and "

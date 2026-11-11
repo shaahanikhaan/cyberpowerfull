@@ -341,7 +341,13 @@ provider. If the agreement forbids that, do not grant the capability — playboo
 | exit `6` | a tool failed or a knowledge source is missing; the report names the step |
 | exit `7` | policy block: capability missing, tool not allowed for the worker, or phase not permitted |
 | exit `8` | unknown playbook; `--list-playbooks` |
-| "binary not installed: X" | `make tools`, or check `make toolchain` for the package name |
+| "binary not installed: X" | `make tools`, or check `make toolchain` for the package name (the error now prints the install hint) |
+| strix fails with missing env / model errors | export `STRIX_LLM` and `LLM_API_KEY` (or `OPENAI_API_KEY`); they are passed to the strix subprocess only |
+| prowler reports no credentials | export the provider env (`AWS_*`, `AZURE_*`, `GOOGLE_APPLICATION_CREDENTIALS`); presence is gated before the run |
+| uncover finds nothing with env keys | engine keys (`SHODAN_API_KEY`, ...) are passed through; or use `provider-config.yaml` |
+| pentagi "PENTAGI_URL is not set" | point `PENTAGI_URL` at a running PentAGI instance plus `PENTAGI_API_TOKEN` |
+| sn1per "must be started as root" | re-run the engagement with sudo / as root; brute-forcing stays off by design |
+| long scans die at ~5 minutes | fixed: tools now run up to their declared ceiling (amass 1900s, prowler 1800s, strix/sn1per 3600s) |
 | "wordlist ... not found" | install `seclists`/`wordlists`, or set `allowed_wordlists` |
 | "no free lab port" | something is on 8080/8443/9200/27017/6379/5900/8008; `--lab-port` |
 | lab finds nothing | nothing is listening on the swept ports; run `make lab` itself to prove the path |

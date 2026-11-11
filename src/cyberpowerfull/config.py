@@ -8,6 +8,7 @@ environment variables, then the defaults below.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -110,15 +111,26 @@ class ToolPolicy:
         )
     )
 
-    def sanitized_env(self, base: dict[str, str] | None = None) -> dict[str, str]:
+    def sanitized_env(
+        self, base: dict[str, str] | None = None, *, keep: Iterable[str] = ()
+    ) -> dict[str, str]:
         """Strip common cloud credentials and proxy variables from tool subprocesses.
 
         This is best-effort hygiene, not a network or filesystem sandbox; tools
         may have access to other credentials and configuration files.
+
+        ``keep`` lists exact variable names a tool explicitly requires (declared
+        via :attr:`BaseTool.env_passthrough`): without it, tools that
+        authenticate over ambient env (Strix model keys, Prowler cloud
+        credentials, uncover engine keys) could never receive them.
         """
+        keep_names = set(keep)
         source = dict(os.environ if base is None else base)
         clean: dict[str, str] = {}
         for key, value in source.items():
+            if key in keep_names:
+                clean[key] = value
+                continue
             upper = key.upper()
             if any(upper.startswith(prefix) for prefix in self.env_deny_prefixes):
                 continue
