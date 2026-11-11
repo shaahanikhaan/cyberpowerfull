@@ -38,7 +38,7 @@ report. Results land in `artifacts/` (report, findings JSON, SARIF, run manifest
 | cloud posture (CIS, cluster, provider audit) | `cpf --scope scope.json --target prod --playbook cloud` |
 | to see it work with no target of your own | `./run.sh --lab` — real loopback service, scanned end to end |
 | to know what this host can run | `./run.sh --doctor` |
-| to install the scanner set (Kali/Debian) | `./run.sh --install-tools` |
+| to install the scanner set (Kali/Debian) | `cpf --doctor --fix` (asks before sudo) |
 | the autonomous agent loop | `cpf example.com --ai` (add `--llm llamacpp:model` for a local model) |
 | to prove a run happened | `cyberpowerfull --replay traces/latest.json` |
 
@@ -305,7 +305,7 @@ cpf example.com --i-am-authorized --authorization-ref SOW-2026-014   # non-inter
 |---|---|
 | to see it work with no target of your own | `./run.sh --lab` — real loopback service, scanned end to end |
 | to know what this host can run | `./run.sh --doctor` |
-| to install the scanner set (Kali/Debian) | `./run.sh --install-tools` |
+| to install the scanner set (Kali/Debian) | `cpf --doctor --fix` (asks before sudo) |
 | to install the scanners quietly, no sudo surprises | review `Makefile`, then `make tools` |
 | a specific playbook against a real target | `cpf example.com -m web` (`--mode`/`--playbook` are one flag) |
 | the autonomous agent loop | `cpf example.com --ai` (add `--llm llamacpp:model` for a local model) |

@@ -72,12 +72,21 @@ if [[ "$WITH_TOOLS" -eq 1 ]]; then
     APT=(sudo apt-get); NUCLEI_SUDO=(sudo)
   fi
   "${APT[@]}" update
+  # Canonical list lives in cyberpowerfull.inventory (STARTER_PACKAGES); the
+  # embedded list is only a fallback if the import fails.
+  scanner_pkgs=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && scanner_pkgs+=("$line")
+  done < <("$VENV_DIR/bin/python" -c 'from cyberpowerfull.inventory import STARTER_PACKAGES; print("\n".join(STARTER_PACKAGES))' 2>/dev/null || true)
+  if [[ "${#scanner_pkgs[@]}" -eq 0 ]]; then
+    scanner_pkgs=(nmap masscan naabu subfinder amass dnsrecon httpx-toolkit
+      katana ffuf gobuster feroxbuster whatweb wafw00f nikto nuclei sqlmap dalfox
+      arjun wpscan testssl.sh hydra exploitdb metasploit-framework wordlists seclists)
+  fi
   # One package per apt call: a single unknown name (stock Debian lacks some
   # Kali-only packages) must not abort the whole set.
   missing_pkgs=()
-  for pkg in nmap masscan naabu subfinder amass dnsrecon httpx-toolkit \
-      katana ffuf gobuster feroxbuster whatweb wafw00f nikto nuclei sqlmap dalfox \
-      arjun wpscan testssl.sh hydra exploitdb metasploit-framework wordlists seclists; do
+  for pkg in "${scanner_pkgs[@]}"; do
     if "${APT[@]}" install -y "$pkg" >/dev/null 2>&1; then
       say "scanner package ok: $pkg"
     else
