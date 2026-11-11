@@ -231,6 +231,38 @@ INSTALL_HINTS: dict[str, str] = {
     "docker": "apt install docker.io",
 }
 
+#: Starter scanner set (Debian/Kali apt names). Single source of truth for
+#: ``cpf --doctor --fix`` and ``scripts/install.sh --with-tools`` (the shell
+#: script queries this tuple and only falls back to its embedded copy when
+#: the import fails).
+STARTER_PACKAGES: tuple[str, ...] = (
+    "nmap",
+    "masscan",
+    "naabu",
+    "subfinder",
+    "amass",
+    "dnsrecon",
+    "httpx-toolkit",
+    "katana",
+    "ffuf",
+    "gobuster",
+    "feroxbuster",
+    "whatweb",
+    "wafw00f",
+    "nikto",
+    "nuclei",
+    "sqlmap",
+    "dalfox",
+    "arjun",
+    "wpscan",
+    "testssl.sh",
+    "hydra",
+    "exploitdb",
+    "metasploit-framework",
+    "wordlists",
+    "seclists",
+)
+
 _COMPRESSED_SUFFIXES = (".gz", ".bz2", ".xz", ".zip", ".7z", ".tar")
 
 _KIND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -705,6 +737,7 @@ __all__ = [
     "INSTALL_HINTS",
     "NUCLEI_TEMPLATE_ROOTS",
     "SHARE_DIRS",
+    "STARTER_PACKAGES",
     "WORDLIST_ROOTS",
     "BinaryInfo",
     "Toolchain",

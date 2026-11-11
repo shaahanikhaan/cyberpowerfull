@@ -579,6 +579,95 @@ class TestToolchainAndPlaybooks:
         assert main(["--doctor", "--scope", str(workdir / "scope.json")]) == 5
         assert "down" in capsys.readouterr().out
 
+    def test_doctor_runs_without_scope_file(self, tmp_path: Path, capsys, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cyberpowerfull.brain.llm.build_client",
+            lambda spec: type(
+                "C",
+                (),
+                {"health": lambda self: {"ok": True, "backend": "auto", "endpoint": "local"}},
+            )(),
+        )
+        assert main(["--doctor", "--scope", str(tmp_path / "nope.json")]) == 0
+        out = capsys.readouterr().out
+        assert "scope:        none" in out
+        assert "binaries:" in out
+
+
+class TestDoctorFix:
+    def test_fix_needs_doctor(self, capsys) -> None:
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--fix"])
+        assert excinfo.value.code == 2
+        assert "--fix needs --doctor" in capsys.readouterr().err
+
+    def test_fix_without_apt_prints_per_tool_hints(self, monkeypatch, capsys) -> None:
+        monkeypatch.setattr("cyberpowerfull.cli.shutil.which", lambda name: None)
+        assert main(["--doctor", "--fix"]) == 1
+        err = capsys.readouterr().err
+        assert "apt-get not found" in err
+        assert "nmap" in err
+
+    def test_fix_refuses_without_confirmation_when_not_a_tty(self, monkeypatch, capsys) -> None:
+        monkeypatch.setattr(
+            "cyberpowerfull.cli.shutil.which", lambda name: "apt-get" if name == "apt-get" else None
+        )
+        monkeypatch.setattr("cyberpowerfull.cli._deb_installed", lambda package: False)
+        monkeypatch.setattr("cyberpowerfull.cli._nuclei_templates_present", lambda: False)
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        assert main(["--doctor", "--fix"]) == 2
+        assert "re-run with --yes" in capsys.readouterr().err
+
+    def test_fix_no_answer_installs_nothing(self, monkeypatch, capsys) -> None:
+        monkeypatch.setattr(
+            "cyberpowerfull.cli.shutil.which", lambda name: "apt-get" if name == "apt-get" else None
+        )
+        monkeypatch.setattr("cyberpowerfull.cli._deb_installed", lambda package: False)
+        monkeypatch.setattr("cyberpowerfull.cli._nuclei_templates_present", lambda: False)
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda prompt="": "no")
+        assert main(["--doctor", "--fix"]) == 0
+        assert "not installing anything" in capsys.readouterr().out
+
+    def test_fix_happy_path_runs_one_package_per_call(
+        self, monkeypatch, capsys, tmp_path: Path
+    ) -> None:
+        calls: list[list[str]] = []
+        installed = {"nmap", "nikto"}
+
+        def fake_run(command, **kwargs):
+            calls.append(list(command))
+            if "install" in command:
+                installed.add(command[-1])
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr("cyberpowerfull.cli.subprocess.run", fake_run)
+        monkeypatch.setattr(
+            "cyberpowerfull.cli.shutil.which", lambda name: "apt-get" if name == "apt-get" else None
+        )
+        monkeypatch.setattr("cyberpowerfull.cli._deb_installed", installed.__contains__)
+        monkeypatch.setattr("cyberpowerfull.cli._nuclei_templates_present", lambda: True)
+        monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
+        args = build_parser().parse_args(["--doctor", "--fix", "--yes"])
+        assert main(["--doctor", "--fix", "--yes"]) == 0
+        assert args.yes is True
+        installs = [call for call in calls if "install" in call]
+        by_tail = [call[-1] for call in installs]
+        assert "nmap" not in by_tail  # already installed: skipped
+        assert "nikto" not in by_tail
+        # 25 in the starter set, 2 pre-installed: exactly one call per missing package.
+        assert len(by_tail) == len(set(by_tail)) == 23
+        assert len(calls) == 24  # one apt-get update + 23 installs
+
+    def test_fix_dependency_cycle_install_script_uses_canonical_list(self) -> None:
+        import re
+
+        script = Path("scripts/install.sh").read_text()
+        assert "STARTER_PACKAGES" in script
+        assert '"${APT[@]}" update' in script
+        fallback = re.search(r"scanner_pkgs=\(nmap(.*?)\)", script, re.S).group(1)
+        assert "seclists" in fallback
+
 
 class TestShortFlagsAndUpdate:
     def test_target_and_mode_short_flags(self) -> None:

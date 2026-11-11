@@ -100,9 +100,9 @@ cpf example.com --scope my-engagement.json                            # use a sc
 | `traces/latest.json` | replayable trace (`cyberpowerfull --replay traces/latest.json`) |
 | `engagements/<host>.json` | the scope that authorized this run |
 
-Doing something else? `./run.sh --doctor` shows what this host can run, `./run.sh --install-tools`
-installs the scanner set on Kali/Debian, and `./run.sh --lab` proves the whole pipeline against a
-service on `127.0.0.1`.
+Doing something else? `./run.sh --doctor` shows what this host can run, `cpf --doctor --fix`
+installs the missing scanners on Kali/Debian, and `./run.sh --lab` proves the whole pipeline
+against a service on `127.0.0.1`.
 
 ---
 
@@ -344,6 +344,7 @@ provider. If the agreement forbids that, do not grant the capability — playboo
 | exit `7` | policy block: capability missing, tool not allowed for the worker, or phase not permitted |
 | exit `8` | unknown playbook; `--list-playbooks` |
 | "binary not installed: X" | `make tools`, or check `make toolchain` for the package name (the error now prints the install hint) |
+| most steps skipped, thin report | `cpf --doctor --fix` installs the starter scanner set (Debian/Kali, asks before sudo), then re-run |
 | strix fails with missing env / model errors | export `STRIX_LLM` and `LLM_API_KEY` (or `OPENAI_API_KEY`); they are passed to the strix subprocess only |
 | prowler reports no credentials | export the provider env (`AWS_*`, `AZURE_*`, `GOOGLE_APPLICATION_CREDENTIALS`); presence is gated before the run |
 | uncover finds nothing with env keys | engine keys (`SHODAN_API_KEY`, ...) are passed through; or use `provider-config.yaml` |

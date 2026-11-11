@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -20,7 +22,7 @@ from cyberpowerfull.brain.orchestrator import Orchestrator
 from cyberpowerfull.brain.prompt import PromptContext, build_system_prompt
 from cyberpowerfull.brain.tda import TaskDifficultyAssessor, TDAInput
 from cyberpowerfull.config import RunConfig
-from cyberpowerfull.errors import CyberpowerfullError, LLMError, ScopeViolation
+from cyberpowerfull.errors import CyberpowerfullError, LLMError, ScopeError, ScopeViolation
 from cyberpowerfull.intel.models import Component
 from cyberpowerfull.inventory import build_toolchain, install_hint
 from cyberpowerfull.knowledge import (
@@ -67,6 +69,7 @@ examples:
   cyberpowerfull --toolchain                    # live inventory of this host
   cyberpowerfull --update                       # pull the repo, reinstall, exit (no scan)
   cyberpowerfull --doctor --scope scope.json    # pre-engagement readiness check
+  cyberpowerfull --doctor --fix               # install the missing scanners (asks first)
   cyberpowerfull --list-playbooks
   cyberpowerfull --agents
   cyberpowerfull --search-exploits "apache 2.4"
@@ -243,6 +246,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--doctor",
         action="store_true",
         help="readiness check: scope, binaries, wordlists, templates, external agents, model",
+    )
+    g_setup.add_argument(
+        "--fix",
+        action="store_true",
+        help="with --doctor: install the missing starter scanner set (Debian/Kali, asks first)",
+    )
+    g_setup.add_argument(
+        "--yes",
+        action="store_true",
+        help="assume yes for prompts (doctor --fix without a terminal)",
     )
     g_playbook.add_argument("--list-playbooks", action="store_true", help="list playbooks")
     g_playbook.add_argument(
@@ -772,21 +785,142 @@ def _print_toolchain(args: argparse.Namespace) -> int:
     return 0
 
 
+def _deb_installed(package: str) -> bool:
+    """True when dpkg reports the package installed (Debian family only)."""
+    try:
+        completed = subprocess.run(
+            ["dpkg", "-s", package], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def _nuclei_templates_present() -> bool:
+    """Mirror of the inventory check: any template root exists on disk."""
+    from cyberpowerfull.inventory import NUCLEI_TEMPLATE_ROOTS
+
+    for root in NUCLEI_TEMPLATE_ROOTS:
+        try:
+            if Path(root).expanduser().is_dir():
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _doctor_fix(args: argparse.Namespace) -> int:
+    """Install the missing starter scanner set, then report what is left."""
+    from cyberpowerfull.inventory import STARTER_PACKAGES
+
+    if shutil.which("apt-get") is None:
+        print("cannot auto-install: apt-get not found (Debian/Kali only).", file=sys.stderr)
+        print("install the scanner set with your package manager; start here:", file=sys.stderr)
+        for name in ("nmap", "nuclei", "httpx", "subfinder", "ffuf", "nikto"):
+            print(f"  {name:<10} {install_hint(name) or 'no hint recorded'}", file=sys.stderr)
+        return 1
+    missing = [package for package in STARTER_PACKAGES if not _deb_installed(package)]
+    need_templates = shutil.which("nuclei") is not None and not _nuclei_templates_present()
+    if not missing and not need_templates:
+        print("doctor --fix: scanner set already complete, nothing to do.")
+        return 0
+    jobs = []
+    if missing:
+        jobs.append(f"{len(missing)} package(s): {', '.join(missing)}")
+    if need_templates:
+        jobs.append("nuclei templates (nuclei -update-templates)")
+    print("doctor --fix will install: " + "; ".join(jobs))
+    if not args.yes:
+        if not sys.stdin.isatty():
+            print(
+                "refusing to sudo without confirmation: re-run with --yes.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            answer = input("proceed with sudo apt-get? [y/N]: ").strip().lower()
+        except (EOFError, OSError):
+            answer = ""
+        if answer not in {"y", "yes"}:
+            print("not installing anything.")
+            return 0
+    try:
+        root = os.geteuid() == 0
+    except AttributeError:  # non-POSIX (apt-get implies POSIX, but be safe)
+        root = False
+    if root:
+        prefix: list[str] = []
+    elif shutil.which("sudo") is not None:
+        prefix = ["sudo"]
+    else:
+        print(
+            "need root for apt-get and sudo is not installed; run as root instead.",
+            file=sys.stderr,
+        )
+        return 1
+    update = subprocess.run(
+        [*prefix, "apt-get", "update"], capture_output=True, text=True, timeout=600
+    )
+    if update.returncode != 0:
+        print("warning: apt-get update failed; trying the installs anyway.", file=sys.stderr)
+    failed: list[str] = []
+    for package in missing:
+        installed = subprocess.run(
+            [*prefix, "apt-get", "install", "-y", package],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if installed.returncode == 0:
+            print(f"  ok: {package}")
+        else:
+            failed.append(package)
+            print(
+                f"  unavailable: {package} (the agent will report it as missing)",
+                file=sys.stderr,
+            )
+    if need_templates and shutil.which("nuclei") is not None:
+        templates = subprocess.run(
+            [*prefix, "nuclei", "-update-templates"],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if templates.returncode != 0:
+            print("warning: nuclei template update failed.", file=sys.stderr)
+    still = [package for package in missing if not _deb_installed(package)]
+    if still:
+        print(
+            f"doctor --fix: {len(missing) - len(still)} installed, "
+            f"still missing {', '.join(still)}.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"doctor --fix: installed {len(missing)} package(s); re-run cpf --doctor to verify.")
+    return 0
+
+
 def _doctor(args: argparse.Namespace) -> int:
     from cyberpowerfull.brain.llm import build_client
 
     print("readiness check")
-    scope = load_scope(args.scope)
-    print(
-        f"  scope:        ok (engagement={scope.engagement}, "
-        f"fingerprint={scope.fingerprint()[:16]})"
-    )
-    if args.target:
-        print(f"  target:       in scope ({scope.require(args.target)})")
-    print(
-        "  capabilities: "
-        + (", ".join(capability.value for capability in scope.capabilities) or "none granted")
-    )
+    try:
+        scope = load_scope(args.scope)
+    except ScopeError:
+        scope = None
+    if scope is None:
+        print("  scope:        none (cpf --init to create one)")
+    else:
+        print(
+            f"  scope:        ok (engagement={scope.engagement}, "
+            f"fingerprint={scope.fingerprint()[:16]})"
+        )
+        if args.target:
+            print(f"  target:       in scope ({scope.require(args.target)})")
+        print(
+            "  capabilities: "
+            + (", ".join(capability.value for capability in scope.capabilities) or "none granted")
+        )
     toolchain = build_toolchain(versions=True, include_wordlists=True)
     installed = toolchain.installed()
     missing = toolchain.missing()
@@ -1236,7 +1370,7 @@ def _install_hint_command() -> str:
         return "./run.sh --install-tools"
     if Path("scripts/install.sh").is_file():
         return "./scripts/install.sh --with-tools"
-    return "install nmap, nuclei and httpx with your package manager, then re-run"
+    return "cpf --doctor --fix"
 
 
 def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
@@ -1639,7 +1773,7 @@ _COMPLETION_SCRIPTS = {
         '            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))\n'
         "            return 0 ;;\n"
         "    esac\n"
-        '    COMPREPLY=($(compgen -W "--init --examples --completion --lab --doctor --toolchain --list-playbooks --list-tools --init-scope --scope --target --playbook --mode --profile --plan --json --dry-run --i-am-authorized --verbose --quiet --help --version" -- "$cur"))\n'  # noqa: E501
+        '    COMPREPLY=($(compgen -W "--init --examples --completion --lab --doctor --fix --toolchain --list-playbooks --list-tools --init-scope --scope --target --playbook --mode --profile --plan --json --dry-run --i-am-authorized --verbose --quiet --help --version" -- "$cur"))\n'  # noqa: E501
         "}\n"
         "complete -F _cpf_complete cpf cyberpowerfull\n"
     ),
@@ -1651,6 +1785,7 @@ _COMPLETION_SCRIPTS = {
         "        '--examples[copy-paste recipes]' \\\n"
         "        '--lab[loopback demo scan]' \\\n"
         "        '--doctor[readiness check]' \\\n"
+        "        '--fix[install missing scanners with doctor]' \\\n"
         "        '--toolchain[live tool inventory]' \\\n"
         "        '--list-playbooks[list playbooks]' \\\n"
         "        '--list-tools[list tools]' \\\n"
@@ -1676,6 +1811,7 @@ _COMPLETION_SCRIPTS = {
         "complete -c cpf -f -l examples -d 'copy-paste recipes'\n"
         "complete -c cpf -f -l lab -d 'loopback demo scan'\n"
         "complete -c cpf -f -l doctor -d 'readiness check'\n"
+        "complete -c cpf -f -l fix -d 'install missing scanners with doctor'\n"
         "complete -c cpf -f -l toolchain -d 'live tool inventory'\n"
         "complete -c cpf -f -l list-playbooks -d 'list playbooks'\n"
         "complete -c cpf -f -l list-tools -d 'list tools'\n"
@@ -1875,8 +2011,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.target and args.target != args.positional_target:
                 parser.error("give the target once: either 'cpf TARGET' or '--target TARGET'")
             return _one_pass(args, args.positional_target)
+        if args.fix and not args.doctor:
+            parser.error("--fix needs --doctor")
         if args.doctor:
-            return _doctor(args)
+            return _doctor_fix(args) if args.fix else _doctor(args)
         if args.lab:
             return _run_lab(args)
         if args.playbook and not args.lab:

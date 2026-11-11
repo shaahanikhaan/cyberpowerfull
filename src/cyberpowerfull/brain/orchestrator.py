@@ -265,8 +265,7 @@ class WorkerAgent:
     def _resolve(self, tool_name: str) -> BaseTool:
         if tool_name not in self.allowlist:
             raise PolicyViolation(
-                f"worker {self.name!r} may not run {tool_name!r}; allowed: "
-                f"{sorted(self.allowlist)}"
+                f"worker {self.name!r} may not run {tool_name!r}; allowed: {sorted(self.allowlist)}"
             )
         if tool_name in self._tools:
             return self._tools[tool_name]
@@ -367,7 +366,7 @@ class WorkerAgent:
                 tool=tool.name,
                 status=ToolStatus.BLOCKED,
                 error=(
-                    "uncover queries external search engines; " "set allow_passive_sources in scope"
+                    "uncover queries external search engines; set allow_passive_sources in scope"
                 ),
             )
         if tool.name == "theharvester" and not self.scope.allow_passive_sources:
