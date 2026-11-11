@@ -83,8 +83,12 @@ class StubTool:
             "input_schema": {},
         }
 
-    def run(self, raw_args: dict, *, dry_run: bool = False, policy=None) -> ToolResult:
+    def run(
+        self, raw_args: dict, *, dry_run: bool = False, policy=None, announce=None
+    ) -> ToolResult:
         self.calls.append(dict(raw_args))
+        if announce is not None:
+            announce(["stub"])
         if dry_run:
             return ToolResult(tool=self.name, status=ToolStatus.SKIPPED, argv=["stub"])
         return ToolResult(
@@ -457,3 +461,29 @@ class TestCodeEndpointAbsorb:
         facts = Facts(target="127.0.0.1")
         facts.absorb("nmap", [make_finding(endpoint="127.0.0.1:8080")], [])
         assert 8080 in facts.open_ports
+
+
+class TestRunnerDisplayHooks:
+    def test_group_exec_and_skip_hooks_fire(self, scope, memory) -> None:
+        runner = build(scope, memory, {"tcp_probe": StubTool([make_finding()])})
+        groups: list[dict] = []
+        execs: list[dict] = []
+        skips: list[dict] = []
+        result = runner.run(
+            get_playbook("network"),
+            group_start=groups.append,
+            on_exec=execs.append,
+            on_skip=skips.append,
+        )
+        assert groups, "every group announces itself, even an all-skipped one"
+        assert [entry["index"] for entry in groups] == sorted(entry["index"] for entry in groups)
+        assert [entry["tool"] for entry in execs] == ["tcp_probe"]
+        assert [entry["id"] for entry in execs] == result.executed
+        assert any("binary not installed" in entry["reason"] for entry in skips)
+        # live skips match the recorded skip list one-to-one, in order
+        assert [f"{entry['id']}: {entry['reason']}" for entry in skips] == result.skipped
+
+    def test_hooks_are_optional(self, scope, memory) -> None:
+        runner = build(scope, memory, {"tcp_probe": StubTool([make_finding()])})
+        result = runner.run(get_playbook("network"))
+        assert result.executed == ["net-tcp"]

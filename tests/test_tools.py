@@ -1661,3 +1661,23 @@ class TestProwler:
 
         assert ProwlerTool().cloud_posture is True
         assert ProwlerTool().phase is Phase.SCANNING
+
+
+class TestAnnounceHook:
+    def test_dry_run_announces_exact_argv(self) -> None:
+        from cyberpowerfull.tools.nmap import NmapTool
+
+        announced: list[list[str]] = []
+        result = NmapTool().run({"target": "127.0.0.1"}, dry_run=True, announce=announced.append)
+        assert len(announced) == 1
+        assert announced[0] == result.argv
+        assert announced[0][0] == "nmap"
+
+    def test_announce_failure_never_breaks_run(self) -> None:
+        from cyberpowerfull.tools.nmap import NmapTool
+
+        def bad(argv: list[str]) -> None:
+            raise RuntimeError("display exploded")
+
+        result = NmapTool().run({"target": "127.0.0.1"}, dry_run=True, announce=bad)
+        assert result.status == ToolStatus.SKIPPED

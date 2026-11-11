@@ -278,6 +278,7 @@ class WorkerAgent:
         *,
         dry_run: bool = False,
         timeout_s: float | None = None,
+        announce: Callable[[list[str]], None] | None = None,
     ) -> ToolResult:
         try:
             self.scope.assert_runnable()
@@ -434,7 +435,7 @@ class WorkerAgent:
             dns_error = _dns_exclusion_error(validated.target, policy.excluded_networks)
             if dns_error:
                 return ToolResult(tool=tool.name, status=ToolStatus.BLOCKED, error=dns_error)
-        result = tool.run(request.args, dry_run=dry_run, policy=policy)
+        result = tool.run(request.args, dry_run=dry_run, policy=policy, announce=announce)
         if getattr(tool, "cloud_posture", False):
             allowed = list(result.findings)
         elif getattr(tool, "scans_local_paths", False):
@@ -584,6 +585,7 @@ class Orchestrator:
         progress: Callable[[StepRecord], None] | None = None,
         *,
         step_start: Callable[[dict[str, Any]], None] | None = None,
+        on_exec: Callable[[dict[str, Any]], None] | None = None,
     ) -> RunResult:
         """Run the reason-act loop until a stop condition is reached."""
         started = time.monotonic()
@@ -826,7 +828,14 @@ class Orchestrator:
                     error="retry limit reached after two consecutive failures for these arguments",
                 )
             else:
-                result = worker.execute(request, dry_run=self.config.dry_run, timeout_s=remaining)
+                announce = (
+                    (lambda argv, _tool=request.tool: on_exec({"tool": _tool, "argv": argv}))
+                    if on_exec is not None
+                    else None
+                )
+                result = worker.execute(
+                    request, dry_run=self.config.dry_run, timeout_s=remaining, announce=announce
+                )
             ok = result.status in {ToolStatus.OK, ToolStatus.SKIPPED}
 
             self.memory.record_attempt(

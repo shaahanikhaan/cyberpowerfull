@@ -18,7 +18,8 @@ import subprocess
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -374,8 +375,13 @@ class BaseTool(ABC):
         *,
         dry_run: bool = False,
         policy: ToolPolicy | None = None,
+        announce: Callable[[list[str]], None] | None = None,
     ) -> ToolResult:
-        """Validate, execute, and parse a single invocation."""
+        """Validate, execute, and parse a single invocation.
+
+        ``announce`` fires with the exact argv about to run (display only;
+        display code must never break a run, so its errors are swallowed).
+        """
         policy = policy or ToolPolicy()
         started = time.perf_counter()
         try:
@@ -398,6 +404,10 @@ class BaseTool(ABC):
                     argv[0] = resolved
             except InvalidToolArguments as exc:
                 return ToolResult(tool=self.name, status=ToolStatus.ERROR, error=str(exc))
+            if announce is not None:
+                # Display must never break a run.
+                with suppress(Exception):
+                    announce(list(argv))
             if dry_run:
                 return ToolResult(
                     tool=self.name,

@@ -187,6 +187,9 @@ def run_local_lab(
     run_id: str | None = None,
     progress: Callable[[StepRecord], None] | None = None,
     step_start: Callable[[dict[str, Any]], None] | None = None,
+    group_start: Callable[[dict[str, Any]], None] | None = None,
+    on_exec: Callable[[dict[str, Any]], None] | None = None,
+    on_skip: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[PlaybookResult, int]:
     """Serve a real page on loopback, run a playbook against it, then shut down.
 
@@ -205,7 +208,14 @@ def run_local_lab(
             max_steps=max_steps or 80,
             run_id=run_id,
         )
-        result = runner.run(get_playbook(playbook), progress=progress, step_start=step_start)
+        result = runner.run(
+            get_playbook(playbook),
+            progress=progress,
+            step_start=step_start,
+            group_start=group_start,
+            on_exec=on_exec,
+            on_skip=on_skip,
+        )
         assert server.port == chosen
     return result, chosen
 

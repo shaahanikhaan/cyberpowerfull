@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Sn1per-style live console**: every run prints a banner (version, target, engagement,
+  steps), one banner per step group, the exact command line of every dispatched tool
+  (`[*] nmap: $ nmap -sV …`, `●` for in-process natives), live skips as they happen, and a
+  `SCAN COMPLETE` banner — on stderr, so stdout stays machine-readable.
+- **`cpf -v / --verbose`**: finished steps also print the tool's captured output excerpt.
+  Secret-bearing argv values (`--header`, `--body`, `--cookie`, `--data`, `--password`,
+  `--token`) always render as `***`, with or without `-v`.
+- **Finding titles for every severity** on the done line (high/critical keep the `!!`
+  alarm; medium/low/info print dimmed), plus shell-completion entries for the new flag.
+
+
 ### Fixed
 
 - **`--doctor` names the fix for every missing scanner**: the readiness table's third column
