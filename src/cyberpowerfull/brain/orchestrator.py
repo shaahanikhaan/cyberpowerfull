@@ -507,7 +507,11 @@ class WorkerAgent:
                         "scope.allowed_nuclei_templates or from the local template library"
                     ),
                 )
-        policy = self.policy
+        # Tool classes declare realistic ceilings (amass 1900s, prowler 1800s,
+        # strix/sn1per 3600s); the worker default must not silently SIGKILL
+        # them at 300s. An explicit caller timeout still caps via min() below.
+        ceiling = getattr(tool, "timeout_s", 0) or 0
+        policy = replace(self.policy, timeout_s=max(self.policy.timeout_s, ceiling))
         if timeout_s is not None:
             policy = replace(policy, timeout_s=min(policy.timeout_s, max(timeout_s, 0.001)))
         # The native TCP probe performs its own pinned DNS check; third-party

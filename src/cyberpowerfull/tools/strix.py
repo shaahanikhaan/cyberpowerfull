@@ -68,6 +68,8 @@ class StrixTool(BaseTool):
     skill = "external_validation"
     binary = "strix"
     binary_alternatives = ("strix-agent",)
+    # Model credentials are useless unless they reach the sandbox subprocess.
+    env_passthrough = ("STRIX_LLM", "LLM_API_KEY", "OPENAI_API_KEY")
     external = True
     required_capability = Capability.EXTERNAL_AGENTS
     # Verified: 0 = clean run, 2 = findings at/above --fail-on, 1 = error.
