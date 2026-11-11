@@ -217,6 +217,12 @@ INSTALL_HINTS: dict[str, str] = {
     "pentagi": "docker compose up -d (vxcontrol/pentagi) and set PENTAGI_URL / PENTAGI_API_TOKEN",
     "ssh-audit": "apt install ssh-audit || pipx install ssh-audit",
     "theHarvester": "apt install theharvester || pipx install theHarvester",
+    "sslyze": "pipx install sslyze",
+    "dirsearch": "apt install dirsearch || pipx install dirsearch",
+    "enum4linux": "apt install enum4linux-ng",
+    "gau": "apt install gau || go install github.com/lc/gau/v2/cmd/gau@latest",
+    "exiftool": "apt install libimage-exiftool-perl",
+    "sherlock": "apt install sherlock || pipx install sherlock-project",
     "docker": "apt install docker.io",
 }
 

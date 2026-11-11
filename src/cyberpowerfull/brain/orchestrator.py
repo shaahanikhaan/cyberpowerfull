@@ -319,6 +319,14 @@ class WorkerAgent:
                 validated = tool.validate(request.args)
             except InvalidToolArguments as exc:
                 return ToolResult(tool=tool.name, status=ToolStatus.ERROR, error=str(exc))
+        elif getattr(tool, "passive_lookup", False):
+            # Identifier targets (usernames) are validated input to passive
+            # sources, not assets: containment is the allow_passive_sources
+            # gate below, not host scope.
+            try:
+                validated = tool.validate(request.args)
+            except InvalidToolArguments as exc:
+                return ToolResult(tool=tool.name, status=ToolStatus.ERROR, error=str(exc))
         elif getattr(tool, "scans_local_paths", False):
             # Filesystem targets are contained by allowed_paths, not host scope.
             if not _allowed_path(target, self.scope.allowed_paths):
@@ -371,6 +379,15 @@ class WorkerAgent:
                     "set allow_passive_sources in scope"
                 ),
             )
+        if tool.name in {"gau", "sherlock"} and not self.scope.allow_passive_sources:
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    f"{tool.name} queries third-party archives and sites; "
+                    "set allow_passive_sources in scope"
+                ),
+            )
         if (
             tool.name == "gospider"
             and getattr(validated, "other_source", False)
@@ -418,6 +435,18 @@ class WorkerAgent:
                 tool=tool.name,
                 status=ToolStatus.BLOCKED,
                 error="dnsx wordlist must be an existing file listed in scope.allowed_wordlists",
+            )
+        if tool.name == "dirsearch" and not (
+            _allowed_file(str(request.args.get("wordlist", "")), self.scope.allowed_wordlists)
+            or _library_file(str(request.args.get("wordlist", "")))
+        ):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    "dirsearch wordlist must be an existing file "
+                    "listed in scope.allowed_wordlists"
+                ),
             )
         if tool.name in {"dnsenum", "shuffledns"}:
             required_files = []

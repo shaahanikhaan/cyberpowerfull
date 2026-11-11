@@ -7,7 +7,7 @@ reporting against targets you are authorized to test.
 
 - **One command to a report**: `cpf example.com` — scope, plan, scan, Markdown + SARIF output.
 - **Two paths, one guarded tool layer**: a reasoning loop (local model, optional) or 8
-  deterministic playbooks (no model at all) over 49 typed tools and 80 catalogued host binaries.
+  deterministic playbooks (no model at all) over 55 typed tools and 80 catalogued host binaries.
 - **Honest by construction**: missing binaries and denied capabilities are named skips, never
   simulated results; proof-only validation, append-only memory, authorized `scope.json` or no run.
 
@@ -187,7 +187,7 @@ Four components, strict separation, a deterministic control plane around an opti
 │   workers: recon | scan | validate | external                                │
 │   allowlists derived from the registry · phase check · capability gate       │
 │   scope re-check · negative cache · argv list (shell=False) · parser         │
-│   49 typed tools · 29 skill packs · 8 playbooks                              │
+│   55 typed tools · 29 skill packs · 8 playbooks                              │
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 │  ToolResult(status, findings, observations)
 ┌───────────────────────────────▼──────────────────────────────────────────────┐
@@ -248,7 +248,7 @@ src/cyberpowerfull/
 │   ├── tda.py              # Task Difficulty Assessment
 │   ├── attack_tree.py      # EGATS state machine
 │   └── orchestrator.py     # RootAgent, WorkerAgent, Orchestrator
-├── tools/                  # 49 typed wrappers + registry + report extractors
+├── tools/                  # 55 typed wrappers + registry + report extractors
 ├── intel/                  # offline advisory corpus, NVD/KEV importers, correlation
 ├── payloads/               # proof-only payload catalogue + request builder
 ├── native_scan.py          # stdlib port scan, HTTP facts, nmap XML inventory
@@ -604,6 +604,12 @@ names are resolved automatically (`httpx` → `httpx-toolkit`, `testssl.sh` → 
 | `theharvester` | recon | `target` (domain), `sources`, `limit` (needs `passive_sources`) | JSONL file | tested (unit) |
 | `gospider` | recon | `target` (URL), `depth`, `other_source` (needs `passive_sources`) | JSONL | tested (unit) |
 | `shuffledns` | recon | `target` (domain), `mode`, `wordlist`/`subdomains_file`, `resolvers` | JSONL file | tested (unit) |
+| `sslyze` | scanning | `target`, `port`, `sni` | JSON file | tested (unit) |
+| `dirsearch` | scanning | `target` (URL), `wordlist`, `extensions`, `recursive` | JSON file | tested (unit) |
+| `enum4linux` | scanning | `target`, `modules`, `detailed` (null session only) | JSON file | tested (unit) |
+| `gau` | recon | `target` (domain), `providers`, `subs` (needs `passive_sources`) | JSONL | tested (unit) |
+| `exiftool` | recon | `target` (local path), `recursive` | JSON | tested (unit) |
+| `sherlock` | recon | `target` (username) (needs `passive_sources`) | CSV file | tested (unit) |
 | `kubebench` | scanning | `target` (node label), `targets`, `checks` | JSON | tested (unit) |
 | `kubescape` | scanning | `target`, `frameworks`, `manifests` (needs `allowed_paths`) | JSON | tested (unit) |
 | `prowler` | scanning | `target` (label), `provider`, `checks`, `services` (needs cloud credentials) | OCSF JSON | tested (unit) |
