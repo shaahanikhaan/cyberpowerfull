@@ -48,6 +48,7 @@ BINARY_CATALOG: dict[str, tuple[tuple[str, ...], str]] = {
     "amass": (("amass",), "dns"),
     "dnsrecon": (("dnsrecon",), "dns"),
     "dnsenum": (("dnsenum",), "dns"),
+    "shuffledns": (("shuffledns",), "dns"),
     "fierce": (("fierce",), "dns"),
     "whois": (("whois",), "dns"),
     "theHarvester": (("theHarvester",), "osint"),
@@ -166,6 +167,12 @@ INSTALL_HINTS: dict[str, str] = {
     "amass": "apt install amass",
     "dnsx": "apt install dnsx || go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
     "dnsrecon": "apt install dnsrecon",
+    "dnsenum": "apt install dnsenum",
+    "shuffledns": (
+        "apt install shuffledns || go install "
+        "github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest "
+        "(also needs the massdns binary)"
+    ),
     "httpx": "apt install httpx-toolkit",
     "katana": "apt install katana",
     "gospider": "go install github.com/jaeles-project/gospider@latest",
@@ -208,6 +215,8 @@ INSTALL_HINTS: dict[str, str] = {
     "sniper": "git clone https://github.com/1N3/Sn1per && sudo bash install.sh",
     "strix": "pipx install strix-agent",
     "pentagi": "docker compose up -d (vxcontrol/pentagi) and set PENTAGI_URL / PENTAGI_API_TOKEN",
+    "ssh-audit": "apt install ssh-audit || pipx install ssh-audit",
+    "theHarvester": "apt install theharvester || pipx install theHarvester",
     "docker": "apt install docker.io",
 }
 

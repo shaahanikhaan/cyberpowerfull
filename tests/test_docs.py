@@ -104,6 +104,12 @@ TOOL_NAMES = [
     "kubebench",
     "kubescape",
     "prowler",
+    "ssh_audit",
+    "sslscan",
+    "dnsenum",
+    "theharvester",
+    "gospider",
+    "shuffledns",
 ]
 
 

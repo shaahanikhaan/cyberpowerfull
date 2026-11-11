@@ -362,6 +362,41 @@ class WorkerAgent:
                     "uncover queries external search engines; " "set allow_passive_sources in scope"
                 ),
             )
+        if tool.name == "theharvester" and not self.scope.allow_passive_sources:
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    "theharvester queries external OSINT sources; "
+                    "set allow_passive_sources in scope"
+                ),
+            )
+        if (
+            tool.name == "gospider"
+            and getattr(validated, "other_source", False)
+            and not self.scope.allow_passive_sources
+        ):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    "gospider third-party sources query archive.org and others; "
+                    "set allow_passive_sources in scope"
+                ),
+            )
+        if (
+            tool.name == "dnsenum"
+            and getattr(validated, "scrap_subdomains", 0) > 0
+            and not self.scope.allow_passive_sources
+        ):
+            return ToolResult(
+                tool=tool.name,
+                status=ToolStatus.BLOCKED,
+                error=(
+                    "dnsenum Google scraping queries an external search engine; "
+                    "set allow_passive_sources in scope"
+                ),
+            )
         if tool.name == "ffuf" and not (
             _allowed_file(str(request.args.get("wordlist", "")), self.scope.allowed_wordlists)
             or _library_file(str(request.args.get("wordlist", "")))
@@ -384,6 +419,27 @@ class WorkerAgent:
                 status=ToolStatus.BLOCKED,
                 error="dnsx wordlist must be an existing file listed in scope.allowed_wordlists",
             )
+        if tool.name in {"dnsenum", "shuffledns"}:
+            required_files = []
+            if getattr(validated, "bruteforce", False):
+                required_files.append("wordlist")
+            if getattr(validated, "mode", "") == "resolve":
+                required_files.append("subdomains_file")
+            for field_name in required_files:
+                if not (
+                    _allowed_file(
+                        str(request.args.get(field_name, "")), self.scope.allowed_wordlists
+                    )
+                    or _library_file(str(request.args.get(field_name, "")))
+                ):
+                    return ToolResult(
+                        tool=tool.name,
+                        status=ToolStatus.BLOCKED,
+                        error=(
+                            f"{tool.name} {field_name} must be an existing file "
+                            "listed in scope.allowed_wordlists"
+                        ),
+                    )
         if (
             tool.name == "kubescape"
             and request.args.get("manifests")

@@ -10,12 +10,14 @@ from cyberpowerfull.tools.arjun import ArjunTool
 from cyberpowerfull.tools.base import BaseTool
 from cyberpowerfull.tools.cve_correlate import CveCorrelateTool
 from cyberpowerfull.tools.dalfox import DalfoxTool
+from cyberpowerfull.tools.dnsenum import DnsenumTool
 from cyberpowerfull.tools.dnsrecon import DnsreconTool
 from cyberpowerfull.tools.dnsx import DnsxTool
 from cyberpowerfull.tools.feroxbuster import FeroxbusterTool
 from cyberpowerfull.tools.ffuf import FfufTool
 from cyberpowerfull.tools.gitleaks import GitleaksTool
 from cyberpowerfull.tools.gobuster import GobusterTool
+from cyberpowerfull.tools.gospider import GospiderTool
 from cyberpowerfull.tools.http_probe import HttpProbeTool
 from cyberpowerfull.tools.httpx_probe import HttpxTool
 from cyberpowerfull.tools.hydra import HydraTool
@@ -35,12 +37,16 @@ from cyberpowerfull.tools.prowler import ProwlerTool
 from cyberpowerfull.tools.rustscan import RustscanTool
 from cyberpowerfull.tools.searchsploit import SearchsploitTool
 from cyberpowerfull.tools.semgrep import SemgrepTool
+from cyberpowerfull.tools.shuffledns import ShufflednsTool
 from cyberpowerfull.tools.sn1per import Sn1perTool
 from cyberpowerfull.tools.sqlmap import SqlmapTool
+from cyberpowerfull.tools.ssh_audit import SshAuditTool
+from cyberpowerfull.tools.sslscan import SslscanTool
 from cyberpowerfull.tools.strix import StrixTool
 from cyberpowerfull.tools.subfinder import SubfinderTool
 from cyberpowerfull.tools.tcp_probe import TcpProbeTool
 from cyberpowerfull.tools.testssl import TestsslTool
+from cyberpowerfull.tools.theharvester import TheharvesterTool
 from cyberpowerfull.tools.tlsx import TlsxTool
 from cyberpowerfull.tools.trivy import TrivyTool
 from cyberpowerfull.tools.trufflehog import TrufflehogTool
@@ -61,9 +67,13 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     AmassTool,
     DnsreconTool,
     DnsxTool,
+    DnsenumTool,
+    ShufflednsTool,
     UncoverTool,
+    TheharvesterTool,
     HttpxTool,
     KatanaTool,
+    GospiderTool,
     KubebenchTool,
     KubescapeTool,
     Wafw00fTool,
@@ -85,6 +95,8 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     TrivyTool,
     TrufflehogTool,
     TlsxTool,
+    SshAuditTool,
+    SslscanTool,
     WpscanTool,
     ZapTool,
     # validation

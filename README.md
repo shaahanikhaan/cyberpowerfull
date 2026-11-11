@@ -7,7 +7,7 @@ reporting against targets you are authorized to test.
 
 - **One command to a report**: `cpf example.com` — scope, plan, scan, Markdown + SARIF output.
 - **Two paths, one guarded tool layer**: a reasoning loop (local model, optional) or 8
-  deterministic playbooks (no model at all) over 43 typed tools and 79 catalogued host binaries.
+  deterministic playbooks (no model at all) over 49 typed tools and 80 catalogued host binaries.
 - **Honest by construction**: missing binaries and denied capabilities are named skips, never
   simulated results; proof-only validation, append-only memory, authorized `scope.json` or no run.
 
@@ -78,7 +78,7 @@ One workspace that covers the jobs otherwise stitched together from a dozen tool
 | Typed tools | 43 (36 CLI wrappers, 4 native connectors, 3 external-agent adapters) |
 | External agents | Strix (headless CLI), PentAGI (REST/GraphQL API), Sn1per (loot workspace) |
 | Skill packs | 29 markdown/Jinja behavioural packages, selected per step |
-| Host inventory | 79 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
+| Host inventory | 80 catalogued binaries, wordlists, nuclei templates, NSE scripts, Exploit-DB |
 | Tests | 1000+ tests, `pytest --cov-fail-under=70` enforced in CI |
 | Outputs per run | Markdown report, findings JSON, SARIF 2.1.0, `run.json` manifest, trace |
 | Cloud dependencies | none for the core loop (loopback only inference, no telemetry, no SaaS callbacks) |
@@ -187,7 +187,7 @@ Four components, strict separation, a deterministic control plane around an opti
 │   workers: recon | scan | validate | external                                │
 │   allowlists derived from the registry · phase check · capability gate       │
 │   scope re-check · negative cache · argv list (shell=False) · parser         │
-│   43 typed tools · 29 skill packs · 8 playbooks                              │
+│   49 typed tools · 29 skill packs · 8 playbooks                              │
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 │  ToolResult(status, findings, observations)
 ┌───────────────────────────────▼──────────────────────────────────────────────┐
@@ -248,7 +248,7 @@ src/cyberpowerfull/
 │   ├── tda.py              # Task Difficulty Assessment
 │   ├── attack_tree.py      # EGATS state machine
 │   └── orchestrator.py     # RootAgent, WorkerAgent, Orchestrator
-├── tools/                  # 43 typed wrappers + registry + report extractors
+├── tools/                  # 49 typed wrappers + registry + report extractors
 ├── intel/                  # offline advisory corpus, NVD/KEV importers, correlation
 ├── payloads/               # proof-only payload catalogue + request builder
 ├── native_scan.py          # stdlib port scan, HTTP facts, nmap XML inventory
@@ -598,6 +598,12 @@ names are resolved automatically (`httpx` → `httpx-toolkit`, `testssl.sh` → 
 | `semgrep` | scanning | `target` (local path), `config`, `severity` | JSON | tested (unit) |
 | `trivy` | scanning | `target` (local path), `scanners`, `severity` | JSON | tested (unit) |
 | `zap` | scanning | `target` (URL), `active` (needs `aggressive`), `context` | traditional JSON XML | tested (unit) |
+| `ssh_audit` | scanning | `target`, `port` | JSON | tested (unit) |
+| `sslscan` | scanning | `target`, `port`, `sni`, `show_certificate` | XML file | tested (unit) |
+| `dnsenum` | recon | `target` (domain), `bruteforce`, `wordlist`, `dnsserver`, `scrap_subdomains` (needs `passive_sources`) | XML file | tested (unit) |
+| `theharvester` | recon | `target` (domain), `sources`, `limit` (needs `passive_sources`) | JSONL file | tested (unit) |
+| `gospider` | recon | `target` (URL), `depth`, `other_source` (needs `passive_sources`) | JSONL | tested (unit) |
+| `shuffledns` | recon | `target` (domain), `mode`, `wordlist`/`subdomains_file`, `resolvers` | JSONL file | tested (unit) |
 | `kubebench` | scanning | `target` (node label), `targets`, `checks` | JSON | tested (unit) |
 | `kubescape` | scanning | `target`, `frameworks`, `manifests` (needs `allowed_paths`) | JSON | tested (unit) |
 | `prowler` | scanning | `target` (label), `provider`, `checks`, `services` (needs cloud credentials) | OCSF JSON | tested (unit) |
