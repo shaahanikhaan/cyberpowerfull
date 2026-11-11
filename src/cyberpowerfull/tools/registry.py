@@ -7,6 +7,7 @@ from typing import Any
 from cyberpowerfull.errors import ToolNotFound
 from cyberpowerfull.tools.amass import AmassTool
 from cyberpowerfull.tools.arjun import ArjunTool
+from cyberpowerfull.tools.assetfinder import AssetfinderTool
 from cyberpowerfull.tools.base import BaseTool
 from cyberpowerfull.tools.cve_correlate import CveCorrelateTool
 from cyberpowerfull.tools.dalfox import DalfoxTool
@@ -14,10 +15,12 @@ from cyberpowerfull.tools.dirsearch import DirsearchTool
 from cyberpowerfull.tools.dnsenum import DnsenumTool
 from cyberpowerfull.tools.dnsrecon import DnsreconTool
 from cyberpowerfull.tools.dnsx import DnsxTool
+from cyberpowerfull.tools.droopescan import DroopescanTool
 from cyberpowerfull.tools.enum4linux import Enum4linuxTool
 from cyberpowerfull.tools.exiftool import ExiftoolTool
 from cyberpowerfull.tools.feroxbuster import FeroxbusterTool
 from cyberpowerfull.tools.ffuf import FfufTool
+from cyberpowerfull.tools.fierce import FierceTool
 from cyberpowerfull.tools.gau import GauTool
 from cyberpowerfull.tools.gitleaks import GitleaksTool
 from cyberpowerfull.tools.gobuster import GobusterTool
@@ -58,7 +61,9 @@ from cyberpowerfull.tools.trivy import TrivyTool
 from cyberpowerfull.tools.trufflehog import TrufflehogTool
 from cyberpowerfull.tools.uncover import UncoverTool
 from cyberpowerfull.tools.wafw00f import Wafw00fTool
+from cyberpowerfull.tools.wfuzz import WfuzzTool
 from cyberpowerfull.tools.whatweb import WhatwebTool
+from cyberpowerfull.tools.whois import WhoisTool
 from cyberpowerfull.tools.wpscan import WpscanTool
 from cyberpowerfull.tools.zaproxy import ZapTool
 
@@ -74,10 +79,13 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     DnsreconTool,
     DnsxTool,
     DnsenumTool,
+    FierceTool,
     ShufflednsTool,
     UncoverTool,
     TheharvesterTool,
+    WhoisTool,
     GauTool,
+    AssetfinderTool,
     SherlockTool,
     HttpxTool,
     KatanaTool,
@@ -97,6 +105,7 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     WhatwebTool,
     NiktoTool,
     FfufTool,
+    WfuzzTool,
     GitleaksTool,
     GobusterTool,
     FeroxbusterTool,
@@ -110,6 +119,7 @@ _TOOL_CLASSES: tuple[type[BaseTool], ...] = (
     SslscanTool,
     SslyzeTool,
     WpscanTool,
+    DroopescanTool,
     ZapTool,
     # validation
     NucleiTool,
