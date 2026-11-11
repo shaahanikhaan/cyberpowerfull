@@ -223,6 +223,11 @@ INSTALL_HINTS: dict[str, str] = {
     "gau": "apt install gau || go install github.com/lc/gau/v2/cmd/gau@latest",
     "exiftool": "apt install libimage-exiftool-perl",
     "sherlock": "apt install sherlock || pipx install sherlock-project",
+    "assetfinder": "go install github.com/tomnomnom/assetfinder@latest",
+    "fierce": "apt install fierce || pipx install fierce",
+    "whois": "apt install whois",
+    "wfuzz": "apt install wfuzz || pipx install wfuzz",
+    "droopescan": "pipx install droopescan",
     "docker": "apt install docker.io",
 }
 

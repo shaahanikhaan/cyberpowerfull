@@ -7,7 +7,7 @@ reporting against targets you are authorized to test.
 
 - **One command to a report**: `cpf example.com` — scope, plan, scan, Markdown + SARIF output.
 - **Two paths, one guarded tool layer**: a reasoning loop (local model, optional) or 8
-  deterministic playbooks (no model at all) over 55 typed tools and 80 catalogued host binaries.
+  deterministic playbooks (no model at all) over 60 typed tools and 80 catalogued host binaries.
 - **Honest by construction**: missing binaries and denied capabilities are named skips, never
   simulated results; proof-only validation, append-only memory, authorized `scope.json` or no run.
 
@@ -187,7 +187,7 @@ Four components, strict separation, a deterministic control plane around an opti
 │   workers: recon | scan | validate | external                                │
 │   allowlists derived from the registry · phase check · capability gate       │
 │   scope re-check · negative cache · argv list (shell=False) · parser         │
-│   55 typed tools · 29 skill packs · 8 playbooks                              │
+│   60 typed tools · 29 skill packs · 8 playbooks                              │
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 │  ToolResult(status, findings, observations)
 ┌───────────────────────────────▼──────────────────────────────────────────────┐
@@ -610,6 +610,11 @@ names are resolved automatically (`httpx` → `httpx-toolkit`, `testssl.sh` → 
 | `gau` | recon | `target` (domain), `providers`, `subs` (needs `passive_sources`) | JSONL | tested (unit) |
 | `exiftool` | recon | `target` (local path), `recursive` | JSON | tested (unit) |
 | `sherlock` | recon | `target` (username) (needs `passive_sources`) | CSV file | tested (unit) |
+| `assetfinder` | recon | `target` (domain), `subs_only` (needs `passive_sources`) | text lines | tested (unit) |
+| `fierce` | recon | `target` (domain), `wordlist`, `traverse`, `tcp` | text | tested (unit) |
+| `whois` | recon | `target` (domain) (needs `passive_sources`) | text | tested (unit) |
+| `wfuzz` | scanning | `target` (URL with FUZZ), `wordlist`, `method`, `headers`, `hide_codes` | JSON file | tested (unit) |
+| `droopescan` | scanning | `target` (URL), `cms`, `checks` | JSON | tested (unit) |
 | `kubebench` | scanning | `target` (node label), `targets`, `checks` | JSON | tested (unit) |
 | `kubescape` | scanning | `target`, `frameworks`, `manifests` (needs `allowed_paths`) | JSON | tested (unit) |
 | `prowler` | scanning | `target` (label), `provider`, `checks`, `services` (needs cloud credentials) | OCSF JSON | tested (unit) |

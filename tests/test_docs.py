@@ -116,6 +116,11 @@ TOOL_NAMES = [
     "gau",
     "exiftool",
     "sherlock",
+    "assetfinder",
+    "fierce",
+    "whois",
+    "wfuzz",
+    "droopescan",
 ]
 
 

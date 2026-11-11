@@ -379,13 +379,14 @@ class WorkerAgent:
                     "set allow_passive_sources in scope"
                 ),
             )
-        if tool.name in {"gau", "sherlock"} and not self.scope.allow_passive_sources:
+        if tool.name in {"assetfinder", "gau", "sherlock", "whois"} and not (
+            self.scope.allow_passive_sources
+        ):
             return ToolResult(
                 tool=tool.name,
                 status=ToolStatus.BLOCKED,
                 error=(
-                    f"{tool.name} queries third-party archives and sites; "
-                    "set allow_passive_sources in scope"
+                    f"{tool.name} queries third-party services; set allow_passive_sources in scope"
                 ),
             )
         if (
@@ -436,7 +437,7 @@ class WorkerAgent:
                 status=ToolStatus.BLOCKED,
                 error="dnsx wordlist must be an existing file listed in scope.allowed_wordlists",
             )
-        if tool.name == "dirsearch" and not (
+        if tool.name in {"dirsearch", "fierce", "wfuzz"} and not (
             _allowed_file(str(request.args.get("wordlist", "")), self.scope.allowed_wordlists)
             or _library_file(str(request.args.get("wordlist", "")))
         ):
@@ -444,7 +445,7 @@ class WorkerAgent:
                 tool=tool.name,
                 status=ToolStatus.BLOCKED,
                 error=(
-                    "dirsearch wordlist must be an existing file "
+                    f"{tool.name} wordlist must be an existing file "
                     "listed in scope.allowed_wordlists"
                 ),
             )
