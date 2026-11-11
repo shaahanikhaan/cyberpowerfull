@@ -296,3 +296,16 @@ class TestMessageAwareHints:
         code = main(["--scope", str(tmp_path / "nope.json"), "--target", "127.0.0.1", "--check"])
         assert code == 3
         assert "cpf --init" in capsys.readouterr().err
+
+
+class TestVerboseDisplay:
+    def test_make_display_passes_verbosity(self) -> None:
+        import argparse
+
+        from cyberpowerfull.cli import _make_display
+
+        verbose = _make_display(argparse.Namespace(quiet=False, verbose=True), total=3)
+        assert verbose is not None and verbose._verbose is True
+        plain = _make_display(argparse.Namespace(quiet=False, verbose=False), total=3)
+        assert plain is not None and plain._verbose is False
+        assert _make_display(argparse.Namespace(quiet=True, verbose=True), total=3) is None

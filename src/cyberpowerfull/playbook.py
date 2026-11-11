@@ -21,6 +21,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 from urllib.parse import urlparse
 
@@ -869,6 +870,9 @@ class PlaybookRunner:
         *,
         progress: Callable[[StepRecord], None] | None = None,
         step_start: Callable[[dict[str, Any]], None] | None = None,
+        group_start: Callable[[dict[str, Any]], None] | None = None,
+        on_exec: Callable[[dict[str, Any]], None] | None = None,
+        on_skip: Callable[[dict[str, Any]], None] | None = None,
     ) -> PlaybookResult:
         started = time.monotonic()
         recorder = TraceRecorder(
@@ -881,38 +885,71 @@ class PlaybookRunner:
         )
         executed: list[str] = []
         skipped: list[str] = []
+
+        def _skip(step_id: str, reason: str) -> None:
+            skipped.append(f"{step_id}: {reason}")
+            if on_skip is not None:
+                on_skip({"id": step_id, "reason": reason})
+
+        def _defer(step_id: str, reason: str) -> None:
+            # Pre-dispatch skips print after the group banner, in plan order.
+            skipped.append(f"{step_id}: {reason}")
+            deferred.append((step_id, reason))
+
         stop_reason = "playbook_complete"
         step_index = 0
         budget = BudgetState(max_iterations=self.max_steps, max_seconds=self.max_seconds)
 
         for group in playbook.groups:
             self._args_cache.clear()
+            deferred: list[tuple[str, str]] = []
             candidates: list[PlaybookStep] = []
             for step in playbook.steps_in(group):
                 reason = self._blocked_reason(step)
                 if reason:
-                    skipped.append(f"{step.id}: {reason}")
+                    _defer(step.id, reason)
                     continue
                 try:
                     args = self._step_args(step)
                 except Exception as exc:  # pragma: no cover - defensive
-                    skipped.append(f"{step.id}: argument derivation failed: {exc}")
+                    _defer(step.id, f"argument derivation failed: {exc}")
                     continue
                 if args is None:
-                    skipped.append(f"{step.id}: precondition not met (no discovered fact)")
+                    _defer(step.id, "precondition not met (no discovered fact)")
                     continue
                 duplicate_of = self._duplicate_of(step, args)
                 if duplicate_of is not None:
-                    skipped.append(
-                        f"{step.id}: duplicate of {duplicate_of} "
-                        "(same tool and arguments already ran)"
+                    _defer(
+                        step.id,
+                        f"duplicate of {duplicate_of} (same tool and arguments already ran)",
                     )
                     continue
                 cached = self.memory.negative_cache_hit(step.tool, args)
                 if cached and not self.dry_run:
-                    skipped.append(f"{step.id}: negative cache: {cached}")
+                    _defer(step.id, f"negative cache: {cached}")
                     continue
                 candidates.append(step)
+            if group_start is not None:
+                phases = [
+                    (
+                        (step.phase or self.tools[step.tool].phase).value
+                        if isinstance(step.phase or self.tools[step.tool].phase, Phase)
+                        else str(step.phase or self.tools[step.tool].phase)
+                    )
+                    for step in candidates
+                ]
+                dominant = max(set(phases), key=phases.count) if phases else ""
+                group_start(
+                    {
+                        "index": playbook.groups.index(group) + 1,
+                        "total": len(playbook.groups),
+                        "phase": dominant,
+                        "steps": len(candidates),
+                    }
+                )
+            if on_skip is not None:
+                for step_id, reason in deferred:
+                    on_skip({"id": step_id, "reason": reason})
             if not candidates:
                 continue
             if budget.exhausted() or len(executed) + len(candidates) > self.max_steps:
@@ -931,11 +968,12 @@ class PlaybookRunner:
                     )
 
             parallel = self.parallel or playbook.default_parallel
+            run_step = partial(self._run_step, on_exec=on_exec)
             if parallel <= 1 or len(candidates) == 1:
-                results = [self._run_step(step) for step in candidates]
+                results = [run_step(step) for step in candidates]
             else:
                 with ThreadPoolExecutor(max_workers=min(parallel, len(candidates))) as pool:
-                    results = list(pool.map(self._run_step, candidates))
+                    results = list(pool.map(run_step, candidates))
 
             for step, record, payload in results:
                 step_index += 1
@@ -953,7 +991,7 @@ class PlaybookRunner:
                     record.finding_ids = [finding.id for finding in new_findings]
                     recorder.add_step(record)
                     if blocked:
-                        skipped.append(f"{step.id}: {payload['error']}")
+                        _skip(step.id, str(payload["error"]))
                         continue
                     executed.append(step.id)
                     findings = new_findings
@@ -963,7 +1001,7 @@ class PlaybookRunner:
                     if progress is not None:
                         progress(record)
                 else:
-                    skipped.append(f"{step.id}: {record.error or 'skipped by guardrail'}")
+                    _skip(step.id, record.error or "skipped by guardrail")
                 if budget.seconds_used >= self.max_seconds:
                     stop_reason = "budget_exhausted:seconds"
                     break
@@ -987,7 +1025,7 @@ class PlaybookRunner:
         )
 
     def _run_step(
-        self, step: PlaybookStep
+        self, step: PlaybookStep, on_exec: Callable[[dict[str, Any]], None] | None = None
     ) -> tuple[PlaybookStep, StepRecord, dict[str, Any] | None]:
         """Execute one step. Never raises: a failure becomes a recorded step."""
         worker_name = _worker_for(step.tool) or "scan"
@@ -1001,7 +1039,17 @@ class PlaybookRunner:
             tool=step.tool,
             args=args,
         )
-        result = worker.execute(request, dry_run=self.dry_run)
+        native = getattr(self.tools.get(step.tool), "binary", "x") is None
+        announce = (
+            (
+                lambda argv: on_exec(
+                    {"tool": step.tool, "id": step.id, "argv": argv, "native": native}
+                )
+            )
+            if on_exec is not None
+            else None
+        )
+        result = worker.execute(request, dry_run=self.dry_run, announce=announce)
         payload: dict[str, Any] | None = {
             "tool": result.tool,
             "status": result.status,

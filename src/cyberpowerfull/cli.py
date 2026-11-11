@@ -475,6 +475,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g_output.add_argument("--json", action="store_true", help="emit the trace JSON on stdout")
     g_output.add_argument("--quiet", action="store_true", help="suppress per-step progress lines")
+    g_output.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="also print each tool's captured output excerpt when its step finishes",
+    )
     g_setup.add_argument("--version", action="version", version=f"cyberpowerfull {__version__}")
     g_setup.add_argument("-h", "--help", action="help", help="show this help message and exit")
     return parser
@@ -524,7 +530,7 @@ def _make_display(args: argparse.Namespace, *, total: int | None) -> LiveDisplay
     """Foreground progress display, unless --quiet suppressed it."""
     if args.quiet:
         return None
-    return LiveDisplay(total=total)
+    return LiveDisplay(total=total, verbose=bool(getattr(args, "verbose", False)))
 
 
 def _print_summary(trace, *, trace_path: Path | None, report_path: Path | None) -> None:
@@ -582,14 +588,19 @@ def _run(args: argparse.Namespace) -> int:
                 run_id=run_id,
             )
             if display is not None:
-                display.note(
-                    f"starting run {run_id} against {target} "
-                    f"(engagement={scope.engagement}, backend={client.backend}, "
-                    f"model={client.model})"
+                display.banner(
+                    {
+                        "kind": f"cpf {__version__} · agent loop",
+                        "target": target,
+                        "detail": f"backend {client.backend} · model {client.model}",
+                        "engagement": scope.engagement,
+                        "steps": args.max_iterations,
+                    }
                 )
             result = orchestrator.run(
                 progress=display.progress if display is not None else None,
                 step_start=display.step_start if display is not None else None,
+                on_exec=display.command if display is not None else None,
             )
     finally:
         if display is not None:
@@ -943,15 +954,30 @@ def _run_playbook(args: argparse.Namespace) -> int:
                 run_id=run_id,
             )
             if display is not None:
-                display.note(
-                    f"starting playbook {playbook.name} against {target} "
-                    f"(engagement={scope.engagement}, steps={len(playbook.steps)})"
+                display.banner(
+                    {
+                        "kind": f"cpf {__version__} · playbook {playbook.name}",
+                        "target": target,
+                        "detail": playbook.title,
+                        "engagement": scope.engagement,
+                        "steps": len(playbook.steps),
+                    }
                 )
             result = runner.run(
                 playbook,
                 progress=display.progress if display is not None else None,
                 step_start=display.step_start if display is not None else None,
+                group_start=display.group_start if display is not None else None,
+                on_exec=display.command if display is not None else None,
+                on_skip=display.skipped if display is not None else None,
             )
+            if display is not None:
+                display.complete(
+                    {
+                        "steps": len(result.executed),
+                        "findings": len(result.findings),
+                    }
+                )
     finally:
         if display is not None:
             display.close()
@@ -1313,15 +1339,30 @@ def _one_pass(args: argparse.Namespace, raw_target: str) -> int:
                 run_id=run_id,
             )
             if display is not None:
-                display.note(
-                    f"running playbook '{playbook.name}' against {raw_target} "
-                    f"({total} planned steps)"
+                display.banner(
+                    {
+                        "kind": f"cpf {__version__} · playbook {playbook.name}",
+                        "target": raw_target,
+                        "detail": f"profile {profile.name}",
+                        "engagement": scope.engagement,
+                        "steps": total,
+                    }
                 )
             result = runner.run(
                 playbook,
                 progress=display.progress if display is not None else None,
                 step_start=display.step_start if display is not None else None,
+                group_start=display.group_start if display is not None else None,
+                on_exec=display.command if display is not None else None,
+                on_skip=display.skipped if display is not None else None,
             )
+            if display is not None:
+                display.complete(
+                    {
+                        "steps": len(result.executed),
+                        "findings": len(result.findings),
+                    }
+                )
     finally:
         if display is not None:
             display.close()
@@ -1603,7 +1644,7 @@ _COMPLETION_SCRIPTS = {
         '            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))\n'
         "            return 0 ;;\n"
         "    esac\n"
-        '    COMPREPLY=($(compgen -W "--init --examples --completion --lab --doctor --toolchain --list-playbooks --list-tools --init-scope --scope --target --playbook --mode --profile --plan --json --dry-run --i-am-authorized --help --version" -- "$cur"))\n'  # noqa: E501
+        '    COMPREPLY=($(compgen -W "--init --examples --completion --lab --doctor --toolchain --list-playbooks --list-tools --init-scope --scope --target --playbook --mode --profile --plan --json --dry-run --i-am-authorized --verbose --quiet --help --version" -- "$cur"))\n'  # noqa: E501
         "}\n"
         "complete -F _cpf_complete cpf cyberpowerfull\n"
     ),
@@ -1627,6 +1668,8 @@ _COMPLETION_SCRIPTS = {
         "        '--json[JSON output]' \\\n"
         "        '--dry-run[plan without running]' \\\n"
         "        '--i-am-authorized[non-interactive authorization attestation]' \\\n"
+        "        '--verbose[show tool output excerpts]' \\\n"
+        "        '--quiet[suppress progress lines]' \\\n"
         "        '--help[show help]' \\\n"
         "        '--version[show version]'\n"
         "}\n"
@@ -1647,6 +1690,8 @@ _COMPLETION_SCRIPTS = {
         "complete -c cpf -f -l profile -d 'scan depth' -r -a 'quick standard deep'\n"
         "complete -c cpf -f -l json -d 'JSON output'\n"
         "complete -c cpf -f -l dry-run -d 'plan without running'\n"
+        "complete -c cpf -f -l verbose -s v -d 'show tool output excerpts'\n"
+        "complete -c cpf -f -l quiet -d 'suppress progress lines'\n"
         "complete -c cpf -f -l help -d 'show help'\n"
     ),
 }
@@ -1722,6 +1767,16 @@ def _run_lab(args: argparse.Namespace) -> int:
     display = _make_display(args, total=len(get_playbook(name).steps))
     try:
         with MemoryStore(cfg.memory_path, run_id=run_id) as memory:
+            if display is not None:
+                display.banner(
+                    {
+                        "kind": f"cpf {__version__} · lab",
+                        "target": LAB_TARGET,
+                        "detail": f"playbook {name}",
+                        "engagement": scope.engagement,
+                        "steps": len(get_playbook(name).steps),
+                    }
+                )
             try:
                 result, port = run_local_lab(
                     scope=scope,
@@ -1734,10 +1789,20 @@ def _run_lab(args: argparse.Namespace) -> int:
                     run_id=run_id,
                     progress=display.progress if display is not None else None,
                     step_start=display.step_start if display is not None else None,
+                    group_start=display.group_start if display is not None else None,
+                    on_exec=display.command if display is not None else None,
+                    on_skip=display.skipped if display is not None else None,
                 )
             except RuntimeError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1
+            if display is not None:
+                display.complete(
+                    {
+                        "steps": len(result.executed),
+                        "findings": len(result.findings),
+                    }
+                )
     finally:
         if display is not None:
             display.close()

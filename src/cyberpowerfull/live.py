@@ -12,14 +12,24 @@ Two render modes, chosen automatically:
 * **plain** (pipes, files, CI): timestamped ``start`` / ``done`` lines. No
   cursor codes, ever.
 
-Deliberately *not* shown: raw tool stdout. Some tools print secrets
-(hydra prints passwords, sqlmap prints dumps), so the display only renders
-the sanitized step record (status, counts, severities, finding titles).
+What the operator sees, sn1per-style: a run banner, one banner per
+step group, the exact command line of every dispatched tool (``$ ...``),
+a live spinner (TTY) or timestamped start lines (pipes), one done line per
+step with finding titles, and a ``SCAN COMPLETE`` banner.
+
+Two deliberate redactions keep this safe to watch over a shoulder:
+
+* argv values after secret-bearing flags (``--header``, ``--body``,
+  ``--cookie``, ``--data``, ``--password``, ``--token``, ``--api-key``)
+  print as ``***`` (see :func:`sanitize_argv`);
+* raw tool stdout prints only with ``verbose=True`` (``cpf -v``), and even
+  then only the bounded excerpt the trace already records.
 """
 
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 import threading
 import time
@@ -50,6 +60,47 @@ _STATUS_WORDS = {
 }
 
 
+#: argv flags whose value is never shown (Authorization headers, bodies, tokens).
+_SECRET_FLAGS = frozenset(
+    {
+        "--header",
+        "--body",
+        "--cookie",
+        "--data",
+        "--password",
+        "--token",
+        "--api-key",
+        "--authorization",
+    }
+)
+
+
+def sanitize_argv(argv: list[str]) -> list[str]:
+    """Mask secret-bearing argv values for display.
+
+    Only the display copy is masked: the real argv still runs unchanged, and
+    the trace still records the exact invocation. Both ``--flag value`` and
+    ``--flag=value`` forms are masked.
+    """
+    clean: list[str] = []
+    mask_next = False
+    for token in argv:
+        if mask_next:
+            clean.append("***")
+            mask_next = False
+            continue
+        name, equals, _ = token.partition("=")
+        if name in _SECRET_FLAGS:
+            if equals:
+                clean.append(f"{name}=***")
+            else:
+                clean.append(name)
+                mask_next = True
+        else:
+            clean.append(token)
+    return clean
+
+
 def _supports_color(stream: TextIO) -> bool:
     if os.environ.get("NO_COLOR"):
         return False
@@ -76,6 +127,7 @@ class LiveDisplay:
         live: bool | None = None,
         color: bool | None = None,
         tick_seconds: float = 0.2,
+        verbose: bool = False,
     ) -> None:
         self._stream = stream if stream is not None else sys.stderr
         self._total = total
@@ -86,6 +138,7 @@ class LiveDisplay:
         )
         self._color = color if color is not None else _supports_color(self._stream)
         self._tick = max(tick_seconds, 0.05)
+        self._verbose = verbose
         self._lock = threading.Lock()
         self._running: dict[str, tuple[str, float]] = {}
         self._done = 0
@@ -108,6 +161,100 @@ class LiveDisplay:
                 self._ensure_thread_locked()
             else:
                 self._write_locked(f"[{self._stamp()}] start {tool} {label}".rstrip() + "\n")
+
+    def banner(self, info: dict[str, Any] | None) -> None:
+        """Print the run header: what, where, and under which engagement."""
+        info = info or {}
+        kind = str(info.get("kind") or "scan")
+        target = str(info.get("target") or "-")
+        detail = str(info.get("detail") or "")
+        engagement = str(info.get("engagement") or "-")
+        steps = info.get("steps")
+        head = f"{kind} · target {target}"
+        if detail:
+            head += f" · {detail}"
+        tail = f"engagement {engagement}"
+        if steps:
+            tail += f" · {steps} steps"
+        tail += f" · started {self._stamp()}"
+        rule = "═" * 72
+        with self._lock:
+            if self._live:
+                self._write_locked(_CLEAR)
+            self._write_locked(self._paint(rule, "cyan") + "\n")
+            self._write_locked(self._paint(head[:72], "bold") + "\n")
+            self._write_locked(self._paint(tail[:72], "dim") + "\n")
+            self._write_locked(self._paint(rule, "cyan") + "\n")
+
+    def group_start(self, info: dict[str, Any] | None) -> None:
+        """Announce a parallel group the moment its steps are dispatched."""
+        info = info or {}
+        index = info.get("index", "?")
+        total = info.get("total", "?")
+        phase = str(info.get("phase") or "").upper()
+        steps = info.get("steps", "?")
+        label = f"GROUP {index}/{total}"
+        if phase:
+            label += f" · {phase}"
+        label += f" · {steps} step(s)"
+        with self._lock:
+            if self._live:
+                self._write_locked(_CLEAR)
+            self._write_locked(
+                self._paint(f"── {label} " + "─" * max(4, 68 - len(label)), "cyan") + "\n"
+            )
+
+    def command(self, info: dict[str, Any] | None) -> None:
+        """Show the exact command line of a dispatched tool, sanitized.
+
+        Native (in-process) tools print with ``●`` instead of ``$`` so nobody
+        mistakes the pseudo-argv for a shell command.
+        """
+        info = info or {}
+        tool = str(info.get("tool") or "-")
+        argv = [str(token) for token in (info.get("argv") or [])]
+        if not argv:
+            return
+        rendered = " ".join(shlex.quote(token) for token in sanitize_argv(argv))
+        mark = "●" if info.get("native") else "$"
+        suffix = "  (in-process)" if info.get("native") else ""
+        with self._lock:
+            if self._live:
+                self._write_locked(_CLEAR)
+            self._write_locked(
+                f"{self._paint('[*]', 'cyan')} {tool}: "
+                f"{self._paint(mark + ' ' + rendered[:400], 'dim')}{suffix}\n"
+            )
+
+    def skipped(self, info: dict[str, Any] | None) -> None:
+        """Show a skipped step the moment the runner rules it out."""
+        info = info or {}
+        step_id = str(info.get("id") or "-")
+        reason = str(info.get("reason") or "skipped")
+        with self._lock:
+            if self._live:
+                self._write_locked(_CLEAR)
+            self._write_locked(
+                f"{self._paint('○', 'yellow')} "
+                f"{self._paint(f'skipped {step_id}: {reason}'[:160], 'dim')}\n"
+            )
+
+    def complete(self, info: dict[str, Any] | None) -> None:
+        """Print the end-of-run banner with the final counts."""
+        info = info or {}
+        findings = info.get("findings", self._findings)
+        steps = info.get("steps", self._done)
+        elapsed = info.get("elapsed")
+        line = f"SCAN COMPLETE · {steps} step(s) · {findings} finding(s)"
+        if isinstance(elapsed, (int, float)):
+            line += f" · {elapsed:.0f}s"
+        rule = "═" * 72
+        with self._lock:
+            if self._live:
+                self._write_locked(_CLEAR)
+            self._write_locked(self._paint(rule, "green") + "\n")
+            self._write_locked(self._paint(line[:72], "bold") + "\n")
+            self._write_locked(self._paint(rule, "green") + "\n")
 
     def progress(self, record: Any) -> None:
         """Render one finished step as a permanent line."""
@@ -139,13 +286,26 @@ class LiveDisplay:
                 index=index,
             )
             self._write_locked(line + "\n")
-            for title in titles:
-                if top in {"HIGH", "CRITICAL"}:
+            if top in {"HIGH", "CRITICAL"}:
+                for title in titles:
                     self._write_locked(
                         f"  {self._paint('!!', 'magenta')} "
                         f"{self._paint(top, 'magenta')}: {title[:120]}\n"
                     )
-                    break
+            elif top == "MEDIUM":
+                for title in titles:
+                    self._write_locked(f"  {self._paint('· ' + title[:120], 'yellow')}\n")
+            else:
+                for title in titles:
+                    self._write_locked(f"  {self._paint('· ' + title[:120], 'dim')}\n")
+            if self._verbose:
+                excerpt = str(result.get("stdout_excerpt") or "")
+                excerpt_lines = [entry for entry in excerpt.splitlines() if entry.strip()]
+                if excerpt_lines:
+                    self._write_locked(self._paint("  ┌─ tool output", "dim") + "\n")
+                    for entry in excerpt_lines[-12:]:
+                        self._write_locked(self._paint(f"  │ {entry[:160]}", "dim") + "\n")
+                    self._write_locked(self._paint("  └─", "dim") + "\n")
             if self._live and not self._running and self._thread is not None:
                 self._stop_thread_locked()
 
@@ -251,4 +411,4 @@ class LiveDisplay:
             stop.wait(self._tick)
 
 
-__all__ = ["LiveDisplay"]
+__all__ = ["LiveDisplay", "sanitize_argv"]

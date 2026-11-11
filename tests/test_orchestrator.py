@@ -45,9 +45,11 @@ class StubTool(BaseTool):
     def build_argv(self, args, out_file=None):
         return ["stub", args.target]
 
-    def run(self, raw_args, *, dry_run=False, policy=None):
+    def run(self, raw_args, *, dry_run=False, policy=None, announce=None):
         args = self.validate(raw_args)
         self.calls.append(dict(raw_args))
+        if announce is not None:
+            announce(self.build_argv(args))
         return ToolResult(
             tool=self.name,
             status=ToolStatus.SKIPPED if dry_run else self._status,
