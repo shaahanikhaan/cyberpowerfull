@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from cyberpowerfull import cli
 from cyberpowerfull.cli import _EXIT_HINTS, _require_code_target, main
 from cyberpowerfull.errors import ScopeViolation
 from cyberpowerfull.playbook import get_playbook
@@ -52,8 +53,6 @@ class TestInitWizard:
 
     def test_init_wizard_guided_run_end_to_end(self, tmp_path: Path, monkeypatch) -> None:
         """Recorded-stdin acceptance: answer 5 questions, decline the run, get a scope file."""
-        import cyberpowerfull.cli as cli
-
         answers = iter(
             [
                 "127.0.0.1",  # 1/5 target
@@ -80,8 +79,6 @@ class TestInitWizard:
         assert scope["allow_passive_sources"] is False
 
     def test_init_wizard_repo_target_sets_allowed_paths(self, tmp_path: Path, monkeypatch) -> None:
-        import cyberpowerfull.cli as cli
-
         repo = tmp_path / "myrepo"
         repo.mkdir()
         answers = iter(

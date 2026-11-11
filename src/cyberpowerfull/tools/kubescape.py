@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
@@ -118,15 +119,13 @@ class KubescapeTool(BaseTool):
     def observations(self, args: KubescapeArgs, output: str) -> list[str]:
         mode = f"manifests {args.manifests}" if args.manifests else f"framework {args.framework}"
         note = f"kubescape ({mode}): {len(self.parse(args, output))} failed control(s)"
-        try:
+        with suppress(json.JSONDecodeError):
             document = json.loads(output) if output.strip() else {}
             summary = document.get("summaryDetails") if isinstance(document, dict) else None
             if isinstance(summary, dict):
                 score = summary.get("score")
                 if score is not None:
                     note += f" (score {score})"
-        except json.JSONDecodeError:
-            pass
         return [note]
 
 

@@ -14,6 +14,7 @@ low-severity note; PASS/INFO stay silent.
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from typing import Literal
 
 from pydantic import Field
@@ -101,7 +102,7 @@ class KubebenchTool(BaseTool):
 
     def observations(self, args: KubebenchArgs, output: str) -> list[str]:
         note = f"kube-bench: {len(self.parse(args, output))} failing check(s)"
-        try:
+        with suppress(json.JSONDecodeError):
             document = json.loads(output) if output.strip() else {}
             totals = document.get("Totals") if isinstance(document, dict) else None
             if isinstance(totals, dict):
@@ -110,8 +111,6 @@ class KubebenchTool(BaseTool):
                     f"fail={totals.get('total_fail', '?')} "
                     f"warn={totals.get('total_warn', '?')})"
                 )
-        except json.JSONDecodeError:
-            pass
         return [note]
 
 

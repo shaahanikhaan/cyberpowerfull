@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from cyberpowerfull.explain import explain_finding
 from cyberpowerfull.models import Finding, Phase, Severity
 from cyberpowerfull.reporting import render_markdown
@@ -37,10 +39,13 @@ class TestExplain:
         line = explain_finding(_finding("CIS 1.1.1: something", tool="nmap"))
         assert "CIS Kubernetes Benchmark" not in line  # kubebench rule is tool-scoped
 
-    def test_fallback_never_empty(self) -> None:
-        for severity in Severity:
-            line = explain_finding(_finding("Utterly novel title 12345", severity=severity))
-            assert line.endswith(".") and len(line) > 20
+    @pytest.mark.parametrize(
+        "severity",
+        [Severity.INFO, Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL],
+    )
+    def test_fallback_never_empty(self, severity: Severity) -> None:
+        line = explain_finding(_finding("Utterly novel title 12345", severity=severity))
+        assert line.endswith(".") and len(line) > 20
 
     def test_report_embeds_explanations(self) -> None:
         report = render_markdown(sample_trace())

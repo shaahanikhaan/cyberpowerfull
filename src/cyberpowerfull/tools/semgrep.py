@@ -13,6 +13,7 @@ refused: it logs the project URL to the registry.
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from pathlib import Path
 
 from pydantic import Field, field_validator
@@ -124,13 +125,11 @@ class SemgrepTool(BaseTool):
 
     def observations(self, args: SemgrepArgs, output: str) -> list[str]:
         note = f"semgrep ({args.config}): {len(self.parse(args, output))} finding(s)"
-        try:
+        with suppress(json.JSONDecodeError):
             document = json.loads(output) if output.strip() else {}
             errors = document.get("errors") if isinstance(document, dict) else None
             if isinstance(errors, list) and errors:
                 note += f" ({len(errors)} file(s) failed to parse)"
-        except json.JSONDecodeError:
-            pass
         return [note]
 
 
