@@ -150,11 +150,13 @@ make lab            # or: cyberpowerfull --lab
 
 What happens, in order:
 
-1. a free port is chosen from `8080, 8443, 9200, 27017, 6379, 5900, 8008` (verified free — a busy
+1. if no scope file exists, a loopback-only `scope.json` (targets: `127.0.0.1`, nothing else)
+   is created — this is the only scope the lab ever writes, and never overwrites;
+2. a free port is chosen from `8080, 8443, 9200, 27017, 6379, 5900, 8008` (verified free — a busy
    port is an error, never a silent no-op);
-2. a real `http.server` listener starts on `127.0.0.1:<port>` serving a fixed page and `/health`;
-3. the `network` playbook runs against `127.0.0.1` through the normal worker guardrails;
-4. the trace and report are written, then the listener is stopped.
+3. a real `http.server` listener starts on `127.0.0.1:<port>` serving a fixed page and `/health`;
+4. the `network` playbook runs against `127.0.0.1` through the normal worker guardrails;
+5. the trace and report are written, then the listener is stopped.
 
 You get genuine findings for the loopback ports that are actually open, plus a list of the steps
 this host could not run:

@@ -44,12 +44,11 @@ class TestCompletion:
 
 
 class TestInitWizard:
-    def test_init_refuses_non_tty(self, capsys: pytest.CaptureFixture[str]) -> None:
-        # pytest captures stdin: isatty() is False, so the wizard must bail out cleanly.
+    def test_init_with_closed_stdin_fails_cleanly(self, capsys: pytest.CaptureFixture[str]) -> None:
+        # pytest captures stdin: EOF on the first question means no target, not a crash.
         assert main(["--init"]) == 2
         err = capsys.readouterr().err
-        assert "interactive terminal" in err
-        assert "--init-scope" in err
+        assert "a target is required" in err
 
     def test_init_wizard_guided_run_end_to_end(self, tmp_path: Path, monkeypatch) -> None:
         """Recorded-stdin acceptance: answer 5 questions, decline the run, get a scope file."""

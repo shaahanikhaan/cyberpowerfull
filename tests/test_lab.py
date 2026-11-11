@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import socket
+import sys
 from pathlib import Path
 
 import pytest
@@ -161,12 +163,57 @@ class TestCliLab:
         assert trace["backend"] == "playbook:network"
         assert any("127.0.0.1" in json.dumps(finding) for finding in trace["findings"])
 
-    def test_lab_suggests_the_scope_command_when_none_exists(self, tmp_path: Path, capsys) -> None:
-        code = main(["--scope", str(tmp_path / "missing.json"), "--lab", "--quiet"])
-        err = capsys.readouterr().err
-        assert code == 3
-        assert "--init-scope" in err
-        assert "--authorization-ref" in err
+    def test_lab_creates_loopback_scope_when_none_exists(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        code = main(
+            [
+                "--scope",
+                "scope.json",
+                "--lab",
+                "--quiet",
+                "--max-steps",
+                "1",
+                "--out",
+                str(tmp_path / "art"),
+                "--trace",
+                str(tmp_path / "trace.json"),
+                "--memory",
+                str(tmp_path / "memory.sqlite3"),
+            ]
+        )
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "loopback-only scope" in out
+        scope = json.loads((tmp_path / "scope.json").read_text())
+        assert scope["targets"] == ["127.0.0.1"]
+        assert scope["authorized"] is True
+
+    def test_init_accepts_piped_answers(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        monkeypatch.chdir(tmp_path)
+        answers = "\n".join(
+            [
+                "lab.test",  # 1/5 target
+                "",  # playbook (default recon)
+                "",  # engagement (default)
+                "n",  # aggressive
+                "n",  # credential_testing
+                "n",  # passive sources
+                "",  # authorization ref (default operator-attested)
+                "yes",  # attestation
+                "scope.json",  # scope file
+                "n",  # do not run now
+            ]
+        )
+        monkeypatch.setattr(sys, "stdin", io.StringIO(answers + "\n"))
+        code = main(["--init"])
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "scope written" in out
+        scope = json.loads((tmp_path / "scope.json").read_text())
+        assert scope["targets"] == ["lab.test"]
+        assert scope["authorized"] is True
 
     def test_lab_refuses_a_scope_that_excludes_loopback(self, workdir: Path, capsys) -> None:
         path = workdir / "narrow.json"

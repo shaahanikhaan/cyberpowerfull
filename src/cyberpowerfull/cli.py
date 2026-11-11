@@ -1210,7 +1210,7 @@ def _attestation(host: str, *, interactive: bool) -> bool:
     print("")
     try:
         answer = input("    type 'yes' to confirm you are authorized to test this target: ")
-    except EOFError:  # pragma: no cover - closed stdin
+    except (EOFError, OSError):  # closed stdin
         return False
     return answer.strip().lower() in {"yes", "y"}
 
@@ -1495,7 +1495,7 @@ def _ask(prompt: str, default: str = "") -> str:
     suffix = f" [{default}]" if default else ""
     try:
         answer = input(f"  {prompt}{suffix}: ").strip()
-    except EOFError:
+    except (EOFError, OSError):
         return ""
     return answer or default
 
@@ -1516,14 +1516,9 @@ def _init_wizard(args: argparse.Namespace) -> int:
     from cyberpowerfull.scope import bootstrap_scope, write_scope
 
     if not sys.stdin.isatty():
-        print("error: cpf --init needs an interactive terminal.", file=sys.stderr)
-        print(
-            "hint: non-interactive? use 'cpf --init-scope ...' flags, or "
-            "'cpf TARGET --i-am-authorized'.",
-            file=sys.stderr,
-        )
-        return 2
-    print("cpf init - answer 5 questions, get a scan.")
+        print("cpf init - reading answers from stdin (blank line means the default).")
+    else:
+        print("cpf init - answer 5 questions, get a scan.")
     print("")
     raw_target = _ask("1/5 target (host, URL, or local repo path)")
     if not raw_target:
@@ -1734,20 +1729,25 @@ def _run_lab(args: argparse.Namespace) -> int:
 
     try:
         scope = load_scope(args.scope)
-    except ScopeError as exc:
+    except ScopeError:
         if Path(args.scope).exists():
             raise
-        # Do not invent authorization: print the exact command that records one.
-        print(f"error: {exc}", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("to create the loopback lab scope, run:", file=sys.stderr)
-        print(
-            "  cyberpowerfull --init-scope scope.json --engagement localhost-lab "
-            "--targets 127.0.0.1 --capabilities aggressive --authorize "
-            "--authorization-ref self-owned-lab",
-            file=sys.stderr,
+        # Zero-setup demo: the lab only ever touches loopback, so mint the
+        # loopback-only scope instead of demanding a manual step first. The
+        # "authorized scope or no run" invariant still holds: the written
+        # file authorizes 127.0.0.1 and nothing else.
+        from cyberpowerfull.scope import bootstrap_scope, write_scope
+
+        scope = bootstrap_scope(
+            engagement="localhost-lab",
+            targets=[LAB_TARGET],
+            capabilities=["aggressive"],
+            authorization_ref="self-owned-lab",
+            authorized=True,
+            notes="auto-created by cpf --lab; loopback only",
         )
-        return exc.exit_code
+        path = write_scope(args.scope, scope)
+        print(f"note: created loopback-only scope at {path} (targets: {LAB_TARGET})")
     scope.require(LAB_TARGET)
     cfg = RunConfig(
         scope_path=Path(args.scope),
