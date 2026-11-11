@@ -90,6 +90,7 @@ One workspace that covers the jobs otherwise stitched together from a dozen tool
 | [docs/GUIDE.md](docs/GUIDE.md) | **user guide**: install → first run → scope → playbooks → results → troubleshooting |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | **maintainer map**: invariants, module layout, test reality, gotchas, release checklist |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | what shipped and what comes next, with acceptance tests |
+| [docs/WORLDCLASS.md](docs/WORLDCLASS.md) | **strategy**: measured competitor research and the 5-pillar plan to #1 |
 | [docs/KALI.md](docs/KALI.md) | host layout, packages, wordlist/template resolution |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Strix, PentAGI, Sn1per setup and data flow |
 | [AGENTS.md](AGENTS.md) | entry point for AI coding agents |
@@ -255,7 +256,7 @@ src/cyberpowerfull/
 ├── lab.py                  # real loopback service + playbook (the --lab path)
 └── memory/store.py         # append-only SQLite memory
 
-docs/                       # GUIDE, HANDOFF, ROADMAP, KALI, INTEGRATIONS, readiness audit
+docs/                       # GUIDE, HANDOFF, ROADMAP, WORLDCLASS, KALI, INTEGRATIONS
 AGENTS.md                   # entry point for AI coding agents
 CONTRIBUTING.md             # dev setup, standards, extension recipes
 SECURITY.md  CHANGELOG.md   # policy and history

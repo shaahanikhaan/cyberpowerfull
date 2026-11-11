@@ -89,6 +89,9 @@ One-command mode made the first run easy; the second run is where operators stil
 
 ### Research backlog (not scheduled)
 
+> The long game — competitor measurements, the five laws, and the v6–v10 plan —
+> lives in [WORLDCLASS.md](WORLDCLASS.md). Items below feed those pillars.
+
 - **Differential scanning**: run a playbook twice with a diff report (what changed on the target).
 - **Auth-aware crawling** (cookie/header injection from a scoped credential store) — needs a design
   that never writes secrets into traces.
