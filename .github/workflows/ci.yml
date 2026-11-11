@@ -157,7 +157,7 @@ jobs:
           import json, pathlib
           data = json.loads(pathlib.Path("/tmp/toolchain.json").read_text())
           assert data["binaries"], "no catalogued binaries"
-          assert len(data["binaries"]) == 79, len(data["binaries"])
+          assert len(data["binaries"]) == 80, len(data["binaries"])
           assert isinstance(data["installed_count"], int)
           assert isinstance(data["missing_count"], int)
           assert "wordlists" in data and "external_agents" in data

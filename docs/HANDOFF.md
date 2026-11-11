@@ -54,7 +54,7 @@ src/cyberpowerfull/
 │                     bootstrap_scope()/write_scope() for --init-scope
 ├── models.py         Phase, Capability, Severity, Finding, Decision, BudgetState
 ├── config.py         RunConfig, ModelConfig, ToolPolicy (env sanitation, output caps)
-├── inventory.py      live probe: 79 catalogued binaries, aliases, versions, wordlists,
+├── inventory.py      live probe: 80 catalogued binaries, aliases, versions, wordlists,
 │                     nuclei templates, NSE, Exploit-DB, Docker/agent detection, install hints
 ├── knowledge.py      read-only readers over the local Kali libraries
 ├── playbook.py       6 deterministic playbooks, Facts, PlaybookRunner, COMMON_TCP_PORTS
